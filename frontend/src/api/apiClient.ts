@@ -10,6 +10,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30s timeout for cold-start on free tier
 });
 
 // Interceptor to inject JWT token dynamically from Zustand store

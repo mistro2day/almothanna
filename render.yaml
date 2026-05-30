@@ -15,3 +15,13 @@ services:
         sync: false
       - key: DATABASE_URL_UNPOOLED
         sync: false
+
+  - type: static_site
+    name: almothanna-frontend
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://almothanna-backend.onrender.com
