@@ -16,9 +16,10 @@ services:
       - key: DATABASE_URL_UNPOOLED
         sync: false
 
-  - type: static_site
+  - type: web
     name: almothanna-frontend
     plan: free
+    env: static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     pullRequestPreviewsEnabled: false
