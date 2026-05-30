@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useInventoryStore, Batch } from '../store/useInventoryStore';
 import { useSalesStore, Customer, CartItem, OfflineSale } from '../store/useSalesStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { apiClient } from '../api/apiClient';
+import { apiClient, syncOfflineSales } from '../api/apiClient';
 import { 
   ShoppingCart, 
   UserCheck, 
@@ -158,7 +158,8 @@ export default function Sales() {
 
   useEffect(() => {
     if (!isOffline) {
-      loadSales();
+      // First sync any offline sales, then load all sales from server
+      syncOfflineSales().then(() => loadSales());
     }
   }, [isOffline]);
 
