@@ -325,17 +325,42 @@ export default function App() {
         </button>
       </header>
 
-      {/* Mobile Drawer */}
+      {/* Mobile Full-Screen Navigation Overlay */}
       {mobileDrawerOpen && (
-        <div className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setMobileDrawerOpen(false)}>
-          <aside 
-            className="absolute right-0 top-0 h-full w-80 max-w-[85%] glass-card border-l border-[var(--border-color)] flex flex-col justify-between p-5 text-right" 
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col" onClick={() => setMobileDrawerOpen(false)}>
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
+          
+          {/* Full-screen content */}
+          <div 
+            className="relative z-10 flex flex-col w-full h-full glass-card overflow-y-auto"
             dir="rtl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="space-y-6">
-              {/* User Info */}
-              <div className="glass-card rounded-2xl border border-[var(--border-color)] bg-[var(--glass-bg)] p-4">
+            {/* Header with close button */}
+            <div className="flex items-center justify-between p-4 border-b border-[var(--border-color)]">
+              <button
+                onClick={() => setMobileDrawerOpen(false)}
+                className="p-2.5 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors"
+                aria-label="إغلاق القائمة"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-xl">
+                  <HeartHandshake className="w-5 h-5" />
+                </div>
+                <div className="text-right">
+                  <h2 className="text-base font-bold font-display text-[var(--text-primary)]">المثنى للأدوية</h2>
+                  <span className="text-[9px] text-emerald-500 uppercase tracking-wider">نظام التوزيع ERP</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation Grid - centered */}
+            <div className="flex-1 flex flex-col justify-center px-6 py-8">
+              {/* User Info Card */}
+              <div className="glass-card rounded-2xl border border-[var(--border-color)] bg-[var(--glass-bg)] p-4 mb-8 max-w-md mx-auto w-full">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-right">
                     <p className="text-sm font-bold text-[var(--text-primary)]">{user.name}</p>
@@ -351,8 +376,8 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Navigation Links */}
-              <nav className="space-y-2">
+              {/* 2-column grid of navigation items */}
+              <nav className="grid grid-cols-2 gap-4 max-w-md mx-auto w-full">
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
@@ -360,22 +385,22 @@ export default function App() {
                     <button
                       key={item.id}
                       onClick={() => { setActiveTab(item.id as ViewType); setMobileDrawerOpen(false); }}
-                      className={`w-full flex items-center justify-end gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                      className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
                         isActive 
-                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' 
-                          : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]/30 hover:text-[var(--text-primary)]'
+                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 scale-105 border-2 border-emerald-400/50' 
+                          : 'text-[var(--text-secondary)] glass-card border border-[var(--border-color)] hover:bg-[var(--border-color)]/30 hover:text-[var(--text-primary)] hover:border-emerald-500/30'
                       }`}
                     >
+                      <Icon className="w-9 h-9" />
                       <span>{item.label}</span>
-                      <Icon className="w-5 h-5" />
                     </button>
                   );
                 })}
               </nav>
             </div>
 
-            {/* Drawer Footer */}
-            <div className="space-y-4 pt-4 border-t border-[var(--border-color)]">
+            {/* Footer */}
+            <div className="border-t border-[var(--border-color)] p-4 space-y-3 max-w-md mx-auto w-full">
               <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
                 <span className="flex items-center gap-1.5">
                   {isOffline ? (
@@ -393,32 +418,34 @@ export default function App() {
                 <span>حالة الخدمة</span>
               </div>
 
-              <button
-                onClick={toggleTheme}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] text-sm font-semibold transition-all cursor-pointer"
-              >
-                {theme === 'dark' ? (
-                  <>
-                    <Sun className="w-4 h-4 text-amber-400" />
-                    <span>الوضع النهاري</span>
-                  </>
-                ) : (
-                  <>
-                    <Moon className="w-4 h-4 text-indigo-500" />
-                    <span>الوضع الليلي</span>
-                  </>
-                )}
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={toggleTheme}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] text-sm font-semibold transition-all cursor-pointer"
+                >
+                  {theme === 'dark' ? (
+                    <>
+                      <Sun className="w-4 h-4 text-amber-400" />
+                      <span>الوضع النهاري</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="w-4 h-4 text-indigo-500" />
+                      <span>الوضع الليلي</span>
+                    </>
+                  )}
+                </button>
 
-              <button
-                onClick={logout}
-                className="w-full flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-500 transition-all hover:border-emerald-500 hover:bg-emerald-500 hover:text-white"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>تسجيل الخروج</span>
-              </button>
+                <button
+                  onClick={logout}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-500 transition-all hover:border-emerald-500 hover:bg-emerald-500 hover:text-white"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>تسجيل الخروج</span>
+                </button>
+              </div>
             </div>
-          </aside>
+          </div>
         </div>
       )}
 
@@ -428,28 +455,32 @@ export default function App() {
       </main>
 
       {/* Main Content Area - Mobile */}
-      <main className="md:hidden flex-1 p-4 sm:p-5 z-10 overflow-y-auto safe-area-bottom">
+      <main className="md:hidden flex-1 p-4 sm:p-5 z-10 overflow-y-auto pb-28 sm:pb-32 safe-area-bottom">
         {renderView()}
       </main>
 
-      {/* Mobile Bottom Tabs */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 glass-card border-t border-[var(--border-color)] bottom-tabs h-16 sm:h-20 flex items-center justify-around px-2 z-20">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id as ViewType)}
-              className="flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 min-w-[60px] touch-target"
-            >
-              <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`} />
-              <span className={`text-[10px] sm:text-xs font-medium ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`}>
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
+      {/* Mobile Bottom Navigation - fixed at bottom */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
+        <div className="glass-card border border-[var(--border-color)] rounded-2xl h-20 sm:h-24 flex items-center justify-around px-2 pointer-events-auto shadow-lg shadow-emerald-500/5">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id as ViewType)}
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-2 rounded-xl transition-all duration-200 flex-1 min-w-0 touch-target ${
+                  isActive ? 'bg-emerald-500/10' : ''
+                }`}
+              >
+                <Icon className={`w-6 h-6 sm:w-7 sm:h-7 ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`} />
+                <span className={`text-[11px] sm:text-xs font-semibold truncate w-full text-center ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
     </div>
   );

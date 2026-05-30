@@ -221,6 +221,13 @@ model PurchaseItem {
   createdAt       DateTime      @default(now())
 }
 
+model InvoiceCounter {
+  id      Int    @id
+  nextVal BigInt @default(1)
+
+  @@map("InvoiceCounter")
+}
+
 model SupplierPayment {
   id            String        @id @default(uuid())
   supplierId    String

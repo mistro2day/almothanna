@@ -12,7 +12,11 @@ import {
   CreditCard,
   TrendingUp,
   Plus,
-  X
+  X,
+  Search,
+  Printer,
+  DollarSign,
+  CheckCircle2
 } from 'lucide-react';
 
 interface InvoiceItem {
@@ -35,8 +39,8 @@ interface Invoice {
 type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
 
 export default function Sales() {
-  const { products, batches, getFEFOBatches } = useInventoryStore();
-  const { customers, cart, offlineSalesQueue, addToCart, removeFromCart, updateCartQty, clearCart, addOfflineSale } = useSalesStore();
+  const { products, batches, getFEFOBatches, decrementBatchQty } = useInventoryStore();
+  const { customers, cart, offlineSalesQueue, addToCart, removeFromCart, updateCartQty, clearCart, addOfflineSale, updateOfflineSalePayment } = useSalesStore();
   const { isOffline } = useAuthStore();
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -52,8 +56,17 @@ export default function Sales() {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [issuingInvoice, setIssuingInvoice] = useState(false);
   const [sales, setSales] = useState<Invoice[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const invoiceList = isOffline ? offlineSalesQueue.map((sale) => ({
+  // Payment modal state
+  const [paymentModal, setPaymentModal] = useState<{ open: boolean; invoice: Invoice | null; amount: number; loading: boolean }>({
+    open: false,
+    invoice: null,
+    amount: 0,
+    loading: false,
+  });
+
+  const mapOfflineSaleToInvoice = (sale: OfflineSale): Invoice => ({
     id: sale.id,
     customerName: sale.customerName,
     total: sale.total,
@@ -66,7 +79,23 @@ export default function Sales() {
       qty: item.qty,
       price: item.price,
     })),
-  })) : sales;
+  });
+
+  const invoiceList = isOffline
+    ? offlineSalesQueue.map(mapOfflineSaleToInvoice)
+    : [...sales, ...offlineSalesQueue.map(mapOfflineSaleToInvoice)];
+
+  const filteredInvoiceList = invoiceList.filter((sale) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.trim().toLowerCase();
+    const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
+    return (
+      sale.id.toLowerCase().includes(q) ||
+      sale.customerName.toLowerCase().includes(q) ||
+      statusLabel.includes(q) ||
+      sale.total.toString().includes(q)
+    );
+  });
 
   useEffect(() => {
     if (selectedProductId) {
@@ -110,7 +139,6 @@ export default function Sales() {
     };
 
     addToCart(item);
-    batch.qty -= qty;
     setSelectedProductId('');
     setSelectedBatchId('');
     setQty(1);
@@ -134,12 +162,200 @@ export default function Sales() {
     }
   }, [isOffline]);
 
+  const handlePrint = (sale: Invoice) => {
+    const remaining = Math.max(0, sale.total - sale.paid);
+    const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
+    const paidLabel = sale.paid > 0 ? sale.paid.toLocaleString('en-US') + ' SDG' : '---';
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) return;
+
+    const itemsRows = sale.items
+      .map(
+        (item, i) => `
+        <tr>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${i + 1}</td>
+          <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: right;">${item.productName}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${item.batchNumber}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${item.qty}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${item.price.toLocaleString('en-US')}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${(item.qty * item.price).toLocaleString('en-US')}</td>
+        </tr>`
+      )
+      .join('');
+
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>فاتورة - ${sale.id}</title>
+  <style>
+    @page { size: A4; margin: 15mm 12mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+      background: #fff;
+      color: #1e293b;
+      line-height: 1.6;
+    }
+    .invoice-container { max-width: 190mm; margin: 0 auto; padding: 10px 0; }
+    .invoice-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #10b981;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .company-info h1 { font-size: 22px; color: #065f46; margin-bottom: 4px; }
+    .company-info p { font-size: 12px; color: #64748b; }
+    .invoice-title { text-align: left; }
+    .invoice-title h2 { font-size: 26px; color: #10b981; letter-spacing: 1px; }
+    .invoice-title p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .meta-grid {
+      display: flex;
+      justify-content: space-between;
+      background: #f1f5f9;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
+    .meta-grid .col { display: flex; flex-direction: column; gap: 4px; }
+    .meta-grid .col span:first-child { color: #64748b; font-size: 11px; }
+    .meta-grid .col span:last-child { font-weight: 600; color: #1e293b; }
+    .status-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .status-PAID { background: #d1fae5; color: #065f46; }
+    .status-PARTIAL { background: #fef3c7; color: #92400e; }
+    .status-PENDING { background: #e2e8f0; color: #475569; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    table thead th { background: #10b981; color: #fff; font-size: 12px; font-weight: 600; padding: 10px 6px; border: none; }
+    table tbody tr:nth-child(even) { background: #f8fafc; }
+    table tbody tr:hover { background: #f1f5f9; }
+    .totals { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 24px; }
+    .totals .row { display: flex; justify-content: space-between; width: 260px; font-size: 14px; }
+    .totals .row.total { font-size: 17px; font-weight: 700; color: #065f46; border-top: 2px solid #10b981; padding-top: 6px; }
+    .invoice-footer { border-top: 2px solid #e2e8f0; padding-top: 14px; display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
+    .invoice-footer .stamp { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 6px 18px; font-size: 14px; font-weight: 700; color: #10b981; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <div class="invoice-header">
+      <div class="company-info">
+        <h1>المثنى للأدوية</h1>
+        <p>شركة توزيع الأدوية والمستلزمات الطبية</p>
+        <p>الخرطوم - السودان &nbsp;|&nbsp; هاتف: 0918 100 100</p>
+      </div>
+      <div class="invoice-title">
+        <h2>فاتورة مبيعات</h2>
+        <p>${sale.id}</p>
+      </div>
+    </div>
+    <div class="meta-grid">
+      <div class="col"><span>العميل</span><span>${sale.customerName}</span></div>
+      <div class="col"><span>التاريخ</span><span>${new Date(sale.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</span></div>
+      <div class="col"><span>رقم الفاتورة</span><span style="direction: ltr; text-align: left;">${sale.id}</span></div>
+      <div class="col"><span>حالة الدفع</span><span class="status-badge status-${sale.status}">${statusLabel}</span></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40px;">#</th>
+          <th>المنتج</th>
+          <th>رقم التشغيلة</th>
+          <th>الكمية</th>
+          <th>سعر الوحدة</th>
+          <th>الإجمالي</th>
+        </tr>
+      </thead>
+      <tbody>${itemsRows}</tbody>
+    </table>
+    <div class="totals">
+      <div class="row"><span>المدفوع:</span><span style="color: #10b981; font-weight: 600;">${paidLabel}</span></div>
+      <div class="row"><span>المتبقي:</span><span style="color: ${remaining > 0 ? '#e11d48' : '#10b981'}; font-weight: 600;">${remaining > 0 ? remaining.toLocaleString('en-US') + ' SDG' : '---'}</span></div>
+      <div class="row total"><span>الإجمالي:</span><span>${sale.total.toLocaleString('en-US')} SDG</span></div>
+    </div>
+    <div class="invoice-footer">
+      <div><p>شكراً لتعاملكم مع المثنى للأدوية</p><p>تم إصدار هذه الفاتورة إلكترونياً</p></div>
+      <div class="stamp">المثنى للأدوية</div>
+    </div>
+  </div>
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>
+    `);
+
+    printWindow.document.close();
+  };
+
+  const openPaymentModal = (sale: Invoice) => {
+    const remaining = Math.max(0, sale.total - sale.paid);
+    setPaymentModal({
+      open: true,
+      invoice: sale,
+      amount: remaining,
+      loading: false,
+    });
+  };
+
+  const closePaymentModal = () => {
+    setPaymentModal({ open: false, invoice: null, amount: 0, loading: false });
+  };
+
+  const handlePaymentSubmit = async () => {
+    const { invoice, amount } = paymentModal;
+    if (!invoice || amount <= 0) return;
+
+    setPaymentModal((prev) => ({ ...prev, loading: true }));
+
+    const newPaid = invoice.paid + amount;
+    const newStatus = newPaid >= invoice.total ? 'PAID' : 'PARTIAL';
+
+    // Update local state first for responsiveness
+    const updateInvoiceInList = (list: Invoice[], id: string, updater: (inv: Invoice) => Invoice) =>
+      list.map((inv) => (inv.id === id ? updater(inv) : inv));
+
+    setSales((prev) =>
+      updateInvoiceInList(prev, invoice.id, (inv) => ({
+        ...inv,
+        paid: newPaid,
+        status: newStatus,
+      }))
+    );
+
+    // Also update the offline queue if this invoice exists in it
+    updateOfflineSalePayment(invoice.id, amount);
+
+    // If online, sync to server
+    if (!isOffline) {
+      try {
+        await apiClient.post(`/sales/${invoice.id}/pay`, { amount });
+      } catch (error) {
+        console.error('Failed to sync payment to server:', error);
+        // Store payment in offline payments queue to sync later
+        const offlinePayments = JSON.parse(localStorage.getItem('offline_payments') || '[]');
+        offlinePayments.push({ invoiceId: invoice.id, amount, createdAt: new Date().toISOString() });
+        localStorage.setItem('offline_payments', JSON.stringify(offlinePayments));
+      }
+    } else {
+      // Store payment in offline payments queue
+      const offlinePayments = JSON.parse(localStorage.getItem('offline_payments') || '[]');
+      offlinePayments.push({ invoiceId: invoice.id, amount, createdAt: new Date().toISOString() });
+      localStorage.setItem('offline_payments', JSON.stringify(offlinePayments));
+    }
+
+    closePaymentModal();
+  };
+
   const handleCheckout = async () => {
     if (!selectedCustomerId || cart.length === 0) return;
 
-    const invoiceId = `INV-${Date.now().toString().slice(-6)}`;
+    const invoiceId = `IN-${Date.now().toString().slice(-6)}`;
     const sale: OfflineSale = {
-      id: crypto.randomUUID(),
+      id: invoiceId,
       customerId: selectedCustomerId,
       customerName: selectedCustomer?.name || 'Unknown',
       items: [...cart],
@@ -165,12 +381,21 @@ export default function Sales() {
         });
 
         setSales((prev) => [response.data, ...prev]);
+
+        // Decrement batch quantities in the local inventory store
+        sale.items.forEach((item) => {
+          decrementBatchQty(item.batchId, item.qty);
+        });
       } catch (error) {
         console.error('Failed to save sale on server, adding to offline queue:', error);
         addOfflineSale(sale);
       }
     } else {
       addOfflineSale(sale);
+      // Also decrement locally in offline mode
+      sale.items.forEach((item) => {
+        decrementBatchQty(item.batchId, item.qty);
+      });
     }
 
     setInvoiceNumber(invoiceId);
@@ -201,7 +426,7 @@ export default function Sales() {
   };
 
   // Mobile Invoice List Card Component
-  const InvoiceCard = ({ sale }: { sale: OfflineSale }) => {
+  const InvoiceCard = ({ sale }: { sale: Invoice | OfflineSale }) => {
     const remaining = Math.max(0, sale.total - sale.paid);
     return (
       <div className="glass-card p-4 rounded-xl border border-[var(--glass-border)] space-y-3">
@@ -231,8 +456,28 @@ export default function Sales() {
             <span className="text-[var(--text-secondary)]">المتبقي: </span>
             <span className="font-bold text-rose-500">{remaining.toLocaleString('en-US')} SDG</span>
           </div>
-          <div className="col-span-2 text-[10px] text-[var(--text-secondary)] pt-2 border-t border-[var(--border-color)]">
-            {new Date(sale.createdAt).toLocaleDateString('en-US')}
+          <div className="col-span-2 flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-color)]">
+            <span className="text-[10px] text-[var(--text-secondary)]">
+              {new Date(sale.createdAt).toLocaleDateString('en-US')}
+            </span>
+            <div className="flex items-center gap-1.5">
+              {sale.status !== 'PAID' && (
+                <button
+                  onClick={() => openPaymentModal(sale as Invoice)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-semibold transition-colors"
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  سداد
+                </button>
+              )}
+              <button
+                onClick={() => handlePrint(sale as Invoice)}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 text-xs font-semibold transition-colors"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                طباعة
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -325,15 +570,31 @@ export default function Sales() {
               <div className="text-sm text-[var(--text-secondary)]">آخر تحديث: {new Date().toLocaleDateString('en-US')}</div>
             </div>
 
-            {invoiceCount === 0 ? (
-              <div className="rounded-3xl border border-dashed border-[var(--border-color)] p-8 sm:p-10 text-center text-[var(--text-secondary)]">
-                لا توجد فواتير مسجلة حتى الآن.
+            {/* Search Bar */}
+            <div className="relative mb-4 sm:mb-6">
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <Search className="w-4 h-4 text-[var(--text-secondary)]" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ابحث برقم الفاتورة، اسم العميل، الحالة، أو المبلغ..."
+                className="w-full pr-10 pl-4 py-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm outline-none focus:border-emerald-500/50 transition-colors"
+              />
+            </div>
+
+            {filteredInvoiceList.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-[var(--border-color)] p-8 sm:p-10 text-center">
+                <p className="text-[var(--text-secondary)]">
+                  {searchQuery.trim() ? 'لا توجد فواتير تطابق بحثك.' : 'لا توجد فواتير مسجلة حتى الآن.'}
+                </p>
               </div>
             ) : (
               <>
                 {/* Mobile: Cards View */}
                 <div className="lg:hidden space-y-3">
-                  {offlineSalesQueue.map((sale) => (
+                  {filteredInvoiceList.map((sale) => (
                     <InvoiceCard key={sale.id} sale={sale} />
                   ))}
                 </div>
@@ -349,11 +610,12 @@ export default function Sales() {
                         <th className="pb-3 text-center">الإجمالي</th>
                         <th className="pb-3 text-center">المدفوع</th>
                         <th className="pb-3 text-center">المتبقي</th>
-                        <th className="pb-3 pl-2 text-left">الحالة</th>
+                        <th className="pb-3 text-center">الحالة</th>
+                        <th className="pb-3 text-center">إجراءات</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border-color)]">
-                      {offlineSalesQueue.map((sale) => {
+                      {filteredInvoiceList.map((sale) => {
                         const remaining = Math.max(0, sale.total - sale.paid);
                         return (
                           <tr key={sale.id} className="hover:bg-[var(--border-color)]/30 transition-colors">
@@ -363,10 +625,34 @@ export default function Sales() {
                             <td className="py-3 text-center font-bold text-[var(--text-primary)]">{sale.total.toLocaleString('en-US')} SDG</td>
                             <td className="py-3 text-center font-bold text-emerald-500">{sale.paid.toLocaleString('en-US')} SDG</td>
                             <td className="py-3 text-center font-mono text-rose-500">{remaining.toLocaleString('en-US')} SDG</td>
-                            <td className="py-3 pl-2 text-left">
-                              <span className={`px-3 py-1 rounded-full text-[11px] font-semibold ${sale.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : sale.status === 'PARTIAL' ? 'bg-amber-500/10 text-amber-500' : 'bg-gray-500/10 text-gray-500'}`}>
+                            <td className="py-3 text-center">
+                              <span className={`px-3 py-1 rounded-full text-[11px] font-semibold ${
+                                sale.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : 
+                                sale.status === 'PARTIAL' ? 'bg-amber-500/10 text-amber-500' : 
+                                'bg-gray-500/10 text-gray-500'
+                              }`}>
                                 {sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق'}
                               </span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {sale.status !== 'PAID' && (
+                                  <button
+                                    onClick={() => openPaymentModal(sale)}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-semibold transition-colors"
+                                  >
+                                    <DollarSign className="w-3.5 h-3.5" />
+                                    سداد
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handlePrint(sale)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 text-xs font-semibold transition-colors"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                  طباعة
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -399,13 +685,11 @@ export default function Sales() {
           <div className="p-4 sm:p-6" dir="rtl">
             {/* Mobile: Single column layout */}
             <div className="lg:hidden space-y-6">
-              {/* Customer Section */}
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
                 <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-4">
                   <UserCheck className="w-5 h-5" />
                   بيانات العميل
                 </div>
-
                 <div className="space-y-4">
                   <select
                     value={selectedCustomerId}
@@ -417,7 +701,6 @@ export default function Sales() {
                       <option key={c.id} value={c.id}>{c.name} - {c.state}</option>
                     ))}
                   </select>
-
                   {selectedCustomer && (
                     <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
                       <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
@@ -428,13 +711,11 @@ export default function Sales() {
                 </div>
               </div>
 
-              {/* Add Items Section */}
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
                 <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-4">
                   <ShoppingCart className="w-5 h-5" />
                   إضافة أصناف الفاتورة
                 </div>
-
                 <form onSubmit={handleAddToCart} className="space-y-4">
                   <div className="space-y-2">
                     <label className="block text-xs text-[var(--text-secondary)]">اختر المنتج</label>
@@ -449,69 +730,36 @@ export default function Sales() {
                       ))}
                     </select>
                   </div>
-
                   <div className="space-y-2">
                     <label className="block text-xs text-[var(--text-secondary)]">التشغيلة</label>
                     <select
                       value={selectedBatchId}
-                      onChange={(e) => {
-                        setSelectedBatchId(e.target.value);
-                        const selectedBatch = batches.find(b => b.id === e.target.value);
-                        if (selectedBatch) setPrice(Math.round(selectedBatch.costPrice * 1.25));
-                      }}
+                      onChange={(e) => { setSelectedBatchId(e.target.value); const sb = batches.find(b => b.id === e.target.value); if (sb) setPrice(Math.round(sb.costPrice * 1.25)); }}
                       disabled={fefoBatches.length === 0}
                       className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50 h-11"
                     >
                       <option value="">اختر التشغيلة</option>
-                      {fefoBatches.map((b) => (
-                        <option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>
-                      ))}
+                      {fefoBatches.map((b) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
                     </select>
                   </div>
-
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <label className="block text-xs text-[var(--text-secondary)]">الكمية</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={qty}
-                        onChange={(e) => setQty(Number(e.target.value))}
-                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11"
-                      />
+                      <input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
                     </div>
-
                     <div className="space-y-2">
                       <label className="block text-xs text-[var(--text-secondary)]">سعر البيع</label>
-                      <input
-                        type="number"
-                        min={0.1}
-                        step="any"
-                        value={price}
-                        onChange={(e) => setPrice(Number(e.target.value))}
-                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11"
-                      />
+                      <input type="number" min={0.1} step="any" value={price} onChange={(e) => setPrice(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
                     </div>
                   </div>
-
-                  <button
-                    type="submit"
-                    disabled={!selectedBatchId}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 h-11"
-                  >
-                    <Plus className="w-4 h-4" />
-                    إضافة
-                  </button>
+                  <button type="submit" disabled={!selectedBatchId} className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 h-11"><Plus className="w-4 h-4" />إضافة</button>
                 </form>
               </div>
 
-              {/* Cart Items Section */}
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
                 <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-4">عناصر الفاتورة</h4>
                 {cart.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-secondary)]">
-                    لم يضف بعد أي منتج.
-                  </div>
+                  <div className="rounded-2xl border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-secondary)]">لم يضف بعد أي منتج.</div>
                 ) : (
                   <div className="space-y-3 text-sm">
                     {cart.map((item) => (
@@ -520,57 +768,27 @@ export default function Sales() {
                           <p className="font-medium text-[var(--text-primary)]">{item.productName}</p>
                           <p className="text-[var(--text-secondary)] text-xs">{item.batchNumber} • {item.qty} x {item.price} SDG</p>
                         </div>
-                        <button
-                          onClick={() => removeFromCart(item.batchId)}
-                          className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold h-11 touch-target"
-                        >
-                          حذف
-                        </button>
+                        <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold h-11 touch-target">حذف</button>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Summary & Payment Section */}
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10 space-y-5">
                 <div>
                   <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-3">الملخص</h4>
                   <div className="space-y-3 text-sm text-[var(--text-secondary)]">
-                    <div className="flex justify-between">
-                      <span>إجمالي الفاتورة</span>
-                      <strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>المدفوع حالياً</span>
-                      <strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong>
-                    </div>
-                    <div className="flex justify-between border-t border-[var(--border-color)] pt-3">
-                      <span className="font-semibold">المتبقي</span>
-                      <strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong>
-                    </div>
+                    <div className="flex justify-between"><span>إجمالي الفاتورة</span><strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong></div>
+                    <div className="flex justify-between"><span>المدفوع حالياً</span><strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong></div>
+                    <div className="flex justify-between border-t border-[var(--border-color)] pt-3"><span className="font-semibold">المتبقي</span><strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong></div>
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <label className="block text-[var(--text-secondary)] font-semibold">المبلغ المدفوع</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(Number(e.target.value))}
-                    className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11"
-                  />
+                  <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
                 </div>
-
-                <button
-                  onClick={handleCheckout}
-                  disabled={!selectedCustomerId || cart.length === 0}
-                  className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors h-11 touch-target"
-                >
-                  إصدار الفاتورة
-                </button>
+                <button onClick={handleCheckout} disabled={!selectedCustomerId || cart.length === 0} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors h-11 touch-target">إصدار الفاتورة</button>
               </div>
             </div>
 
@@ -578,23 +796,12 @@ export default function Sales() {
             <div className="hidden lg:grid lg:grid-cols-[2fr_420px] gap-6">
               <div className="xl:col-span-1 space-y-6">
                 <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
-                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5">
-                    <UserCheck className="w-5 h-5" />
-                    بيانات العميل
-                  </div>
-
+                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><UserCheck className="w-5 h-5" />بيانات العميل</div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(e) => setSelectedCustomerId(e.target.value)}
-                      className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none"
-                    >
+                    <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none">
                       <option value="">اختر العميل للفاتورة</option>
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name} - {c.state}</option>
-                      ))}
+                      {customers.map((c) => (<option key={c.id} value={c.id}>{c.name} - {c.state}</option>))}
                     </select>
-
                     {selectedCustomer && (
                       <div className="rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
                         <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
@@ -606,77 +813,32 @@ export default function Sales() {
                 </div>
 
                 <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
-                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5">
-                    <ShoppingCart className="w-5 h-5" />
-                    إضافة أصناف الفاتورة
-                  </div>
-
+                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><ShoppingCart className="w-5 h-5" />إضافة أصناف الفاتورة</div>
                   <form onSubmit={handleAddToCart} className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
                     <div className="lg:col-span-2 space-y-1">
                       <label className="block text-xs text-[var(--text-secondary)]">اختر المنتج</label>
-                      <select
-                        value={selectedProductId}
-                        onChange={(e) => setSelectedProductId(e.target.value)}
-                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none"
-                      >
+                      <select value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none">
                         <option value="">اختر المنتج</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
+                        {products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
                       </select>
                     </div>
-
                     <div className="space-y-1">
                       <label className="block text-xs text-[var(--text-secondary)]">التشغيلة</label>
-                      <select
-                        value={selectedBatchId}
-                        onChange={(e) => {
-                          setSelectedBatchId(e.target.value);
-                          const selectedBatch = batches.find(b => b.id === e.target.value);
-                          if (selectedBatch) setPrice(Math.round(selectedBatch.costPrice * 1.25));
-                        }}
-                        disabled={fefoBatches.length === 0}
-                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50"
-                      >
+                      <select value={selectedBatchId} onChange={(e) => { setSelectedBatchId(e.target.value); const sb = batches.find(b => b.id === e.target.value); if (sb) setPrice(Math.round(sb.costPrice * 1.25)); }} disabled={fefoBatches.length === 0} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50">
                         <option value="">اختر التشغيلة</option>
-                        {fefoBatches.map((b) => (
-                          <option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>
-                        ))}
+                        {fefoBatches.map((b) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
                       </select>
                     </div>
-
                     <div className="space-y-1">
                       <label className="block text-xs text-[var(--text-secondary)]">الكمية</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={qty}
-                        onChange={(e) => setQty(Number(e.target.value))}
-                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none"
-                      />
+                      <input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
                     </div>
-
                     <div className="space-y-1">
                       <label className="block text-xs text-[var(--text-secondary)]">سعر البيع</label>
-                      <input
-                        type="number"
-                        min={0.1}
-                        step="any"
-                        value={price}
-                        onChange={(e) => setPrice(Number(e.target.value))}
-                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none"
-                      />
+                      <input type="number" min={0.1} step="any" value={price} onChange={(e) => setPrice(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
                     </div>
-
                     <div className="lg:col-span-4 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={!selectedBatchId}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        <Plus className="w-4 h-4" />
-                        إضافة
-                      </button>
+                      <button type="submit" disabled={!selectedBatchId} className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"><Plus className="w-4 h-4" />إضافة</button>
                     </div>
                   </form>
                 </div>
@@ -684,9 +846,7 @@ export default function Sales() {
                 <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
                   <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-4">عناصر الفاتورة</h4>
                   {cart.length === 0 ? (
-                    <div className="rounded-3xl border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-secondary)]">
-                      لم يضف بعد أي منتج.
-                    </div>
+                    <div className="rounded-3xl border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-secondary)]">لم يضف بعد أي منتج.</div>
                   ) : (
                     <div className="space-y-3 text-sm">
                       {cart.map((item) => (
@@ -695,12 +855,7 @@ export default function Sales() {
                             <p className="font-medium text-[var(--text-primary)]">{item.productName}</p>
                             <p className="text-[var(--text-secondary)] text-xs">{item.batchNumber} • {item.qty} x {item.price} SDG</p>
                           </div>
-                          <button
-                            onClick={() => removeFromCart(item.batchId)}
-                            className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold"
-                          >
-                            حذف
-                          </button>
+                          <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold">حذف</button>
                         </div>
                       ))}
                     </div>
@@ -710,48 +865,123 @@ export default function Sales() {
 
               <div className="space-y-6 xl:sticky xl:top-6">
                 <div className="glass-card p-7 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
-                  <div className="flex items-center justify-between mb-5">
-                    <h4 className="text-base font-semibold text-[var(--text-primary)]">الملخص</h4>
-                    <span className="text-xs text-[var(--text-secondary)]">{cart.length} صنف</span>
-                  </div>
+                  <div className="flex items-center justify-between mb-5"><h4 className="text-base font-semibold text-[var(--text-primary)]">الملخص</h4><span className="text-xs text-[var(--text-secondary)]">{cart.length} صنف</span></div>
                   <div className="space-y-5 text-sm text-[var(--text-secondary)]">
-                    <div className="flex justify-between">
-                      <span>إجمالي الفاتورة</span>
-                      <strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>المدفوع حالياً</span>
-                      <strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong>
-                    </div>
-                    <div className="flex justify-between border-t border-[var(--border-color)] pt-5">
-                      <span className="font-semibold">المتبقي</span>
-                      <strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong>
-                    </div>
+                    <div className="flex justify-between"><span>إجمالي الفاتورة</span><strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong></div>
+                    <div className="flex justify-between"><span>المدفوع حالياً</span><strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong></div>
+                    <div className="flex justify-between border-t border-[var(--border-color)] pt-5"><span className="font-semibold">المتبقي</span><strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong></div>
                   </div>
                 </div>
-
                 <div className="glass-card p-7 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] space-y-5 shadow-lg shadow-black/10">
                   <div className="space-y-2 text-sm">
                     <label className="block text-[var(--text-secondary)] font-semibold">المبلغ المدفوع</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={paidAmount}
-                      onChange={(e) => setPaidAmount(Number(e.target.value))}
-                      className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none"
-                    />
+                    <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
                   </div>
-
-                  <button
-                    onClick={handleCheckout}
-                    disabled={!selectedCustomerId || cart.length === 0}
-                    className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                  >
-                    إصدار الفاتورة
-                  </button>
+                  <button onClick={handleCheckout} disabled={!selectedCustomerId || cart.length === 0} className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors">إصدار الفاتورة</button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Modal */}
+      {paymentModal.open && paymentModal.invoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={closePaymentModal}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative z-10 w-full max-w-md glass-card rounded-3xl border border-[var(--glass-border)] p-6 sm:p-8 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-[var(--text-primary)]">سداد الفاتورة</h3>
+              <button
+                onClick={closePaymentModal}
+                className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Invoice summary */}
+            <div className="glass-card rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 mb-6 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)]">رقم الفاتورة</span>
+                <span className="font-mono font-semibold text-[var(--text-primary)]">{paymentModal.invoice.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)]">العميل</span>
+                <span className="font-semibold text-[var(--text-primary)]">{paymentModal.invoice.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)]">الإجمالي</span>
+                <span className="font-semibold text-[var(--text-primary)]">{paymentModal.invoice.total.toLocaleString('en-US')} SDG</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)]">المدفوع سابقاً</span>
+                <span className="font-semibold text-emerald-500">{paymentModal.invoice.paid.toLocaleString('en-US')} SDG</span>
+              </div>
+              <div className="flex justify-between border-t border-[var(--border-color)] pt-2">
+                <span className="font-semibold text-[var(--text-secondary)]">المتبقي</span>
+                <span className="font-semibold text-rose-500">{Math.max(0, paymentModal.invoice.total - paymentModal.invoice.paid).toLocaleString('en-US')} SDG</span>
+              </div>
+            </div>
+
+            {/* Payment input */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-[var(--text-secondary)] mb-2">مبلغ السداد</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.max(0, paymentModal.invoice.total - paymentModal.invoice.paid)}
+                    step="any"
+                    value={paymentModal.amount}
+                    onChange={(e) => setPaymentModal((prev) => ({ ...prev, amount: Number(e.target.value) }))}
+                    className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-5 py-4 text-xl font-bold text-[var(--text-primary)] outline-none text-center focus:border-emerald-500/50 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Quick amount buttons */}
+              <div className="grid grid-cols-3 gap-2">
+                {[0.25, 0.5, 0.75].map((fraction) => {
+                  const remaining = paymentModal.invoice!.total - paymentModal.invoice!.paid;
+                  const quickAmount = Math.round(remaining * fraction);
+                  return (
+                    <button
+                      key={fraction}
+                      onClick={() => setPaymentModal((prev) => ({ ...prev, amount: quickAmount }))}
+                      className="px-3 py-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] text-xs font-semibold transition-colors"
+                    >
+                      {Math.round(fraction * 100)}% ({quickAmount.toLocaleString('en-US')})
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setPaymentModal((prev) => ({ ...prev, amount: Math.max(0, prev.invoice!.total - prev.invoice!.paid) }))}
+                  className="px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-xs font-semibold transition-colors"
+                >
+                  كامل المبلغ
+                </button>
+              </div>
+
+              <button
+                onClick={handlePaymentSubmit}
+                disabled={paymentModal.amount <= 0 || paymentModal.loading || paymentModal.amount > Math.max(0, paymentModal.invoice.total - paymentModal.invoice.paid)}
+                className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {paymentModal.loading ? (
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>تأكيد السداد</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

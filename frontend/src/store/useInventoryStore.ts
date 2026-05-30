@@ -28,6 +28,7 @@ interface InventoryState {
   setBatches: (batches: Batch[]) => void;
   addOfflineProduct: (prod: Product) => void;
   addOfflineBatch: (batch: Batch) => void;
+  decrementBatchQty: (batchId: string, qty: number) => void;
   getFEFOBatches: (productId: string) => Batch[];
   getNearExpiryBatches: (monthsThreshold?: number) => Batch[];
   loadLocalCache: () => void;
@@ -60,6 +61,15 @@ export const useInventoryStore = create<InventoryState>((set, get) => {
     addOfflineBatch: (batch) => {
       set((state) => ({
         batches: [batch, ...state.batches],
+      }));
+      get().saveLocalCache();
+    },
+
+    decrementBatchQty: (batchId, qty) => {
+      set((state) => ({
+        batches: state.batches.map((b) =>
+          b.id === batchId ? { ...b, qty: Math.max(0, b.qty - qty) } : b
+        ),
       }));
       get().saveLocalCache();
     },

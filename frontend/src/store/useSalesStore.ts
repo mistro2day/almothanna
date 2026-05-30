@@ -40,6 +40,7 @@ interface SalesState {
   updateCartQty: (batchId: string, qty: number) => void;
   clearCart: () => void;
   addOfflineSale: (sale: OfflineSale) => void;
+  updateOfflineSalePayment: (saleId: string, amount: number) => void;
   clearOfflineSalesQueue: () => void;
   loadLocalCache: () => void;
   saveLocalCache: () => void;
@@ -87,6 +88,18 @@ export const useSalesStore = create<SalesState>((set, get) => {
     addOfflineSale: (sale) => {
       set((state) => ({
         offlineSalesQueue: [...state.offlineSalesQueue, sale],
+      }));
+      get().saveLocalCache();
+    },
+
+    updateOfflineSalePayment: (saleId, amount) => {
+      set((state) => ({
+        offlineSalesQueue: state.offlineSalesQueue.map((s) => {
+          if (s.id !== saleId) return s;
+          const newPaid = s.paid + amount;
+          const newStatus: 'PENDING' | 'PAID' | 'PARTIAL' = newPaid >= s.total ? 'PAID' : 'PARTIAL';
+          return { ...s, paid: newPaid, status: newStatus };
+        }),
       }));
       get().saveLocalCache();
     },

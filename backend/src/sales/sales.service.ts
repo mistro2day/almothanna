@@ -6,6 +6,19 @@ import { CreateSaleDto } from './dto/create-sale.dto';
 export class SalesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async generateInvoiceNumber(): Promise<string> {
+    // Ensure the sequence exists (idempotent)
+    await this.prisma.$executeRawUnsafe(
+      `CREATE SEQUENCE IF NOT EXISTS invoice_seq START 1`
+    );
+    // Get the next value atomically
+    const result = await this.prisma.$queryRawUnsafe<{ nextval: bigint }[]>(
+      `SELECT nextval('invoice_seq') AS nextval`
+    );
+    const num = Number(result[0].nextval);
+    return `IN-${String(num).padStart(5, '0')}`;
+  }
+
   async createSale(dto: CreateSaleDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('Sale must include at least one item');
@@ -38,9 +51,11 @@ export class SalesService {
     });
 
     const status = dto.paid >= dto.total ? 'PAID' : dto.paid > 0 ? 'PARTIAL' : 'PENDING';
+    const invoiceNumber = await this.generateInvoiceNumber();
 
     const saleCreate = this.prisma.sale.create({
       data: {
+        id: invoiceNumber,
         customerId: dto.customerId,
         total: dto.total,
         paid: dto.paid,
@@ -124,19 +139,26 @@ export class SalesService {
       },
     });
 
-    return sales.map((sale) => ({
-      id: sale.id,
-      customerName: sale.customer.name,
-      total: sale.total,
-      paid: sale.paid,
-      status: sale.status,
-      createdAt: sale.createdAt.toISOString(),
-      items: sale.items.map((item) => ({
-        productName: item.product.name,
-        batchNumber: item.batch.batchNumber,
-        qty: item.qty,
-        price: item.price,
-      })),
-    }));
+    return sales.map((sale) => {
+      // For old invoices with UUID ids, generate a display id
+      const displayId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sale.id)
+        ? `IN-${String(sale.createdAt.getTime().toString().slice(-5))}`
+        : sale.id;
+
+      return {
+        id: displayId,
+        customerName: sale.customer.name,
+        total: sale.total,
+        paid: sale.paid,
+        status: sale.status,
+        createdAt: sale.createdAt.toISOString(),
+        items: sale.items.map((item) => ({
+          productName: item.product.name,
+          batchNumber: item.batch.batchNumber,
+          qty: item.qty,
+          price: item.price,
+        })),
+      };
+    });
   }
 }
