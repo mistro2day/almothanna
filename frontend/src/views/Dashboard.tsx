@@ -56,12 +56,12 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in-slide">
+    <div className="space-y-6 animate-fade-in-slide pb-20 lg:pb-0" dir="rtl">
       {/* Header Info */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-[var(--text-primary)]">لوحة التحكم</h1>
-          <p className="text-[var(--text-secondary)] mt-1 text-sm md:text-base">نظرة عامة على المبيعات، المخزون، وتوزيع الولايات في السودان</p>
+          <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-[var(--text-primary)]">لوحة التحكم</h1>
+          <p className="text-[var(--text-secondary)] mt-1 text-sm sm:text-base">نظرة عامة على المبيعات، المخزون، وتوزيع الولايات في السودان</p>
         </div>
         
         {/* Offline Warning banner if offline */}

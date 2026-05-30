@@ -31,6 +31,8 @@ import {
   X
 } from 'lucide-react';
 
+type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
+
 export default function App() {
   const theme = useThemeStore((state) => state.theme);
   const toggleTheme = useThemeStore((state) => state.toggleTheme);
@@ -38,15 +40,9 @@ export default function App() {
   const isOffline = useAuthStore((state) => state.isOffline);
   const logout = useAuthStore((state) => state.logout);
   
-  // Mobile navigation state
-  const [mobileTab, setMobileTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers'>('dashboard');
+  // Navigation state for desktop and mobile
+  const [activeTab, setActiveTab] = useState<ViewType>('dashboard');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  
-  // Desktop active tab state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers'>('dashboard');
-  
-  // Use appropriate tab state based on screen size
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   
   // Stores Caches
   const loadInventory = useInventoryStore((state) => state.loadLocalCache);
@@ -66,15 +62,12 @@ export default function App() {
   const setPayments = useSupplierStore((state) => state.setPayments);
   const purchaseOrders = useSupplierStore((state) => state.purchaseOrders);
 
-  // Active View State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers'>('dashboard');
   const roleLabels: Record<string, string> = {
     ADMIN: 'مدير النظام',
     SALES: 'فريق المبيعات',
     WAREHOUSE: 'مشرف المخزون',
     ACCOUNTANT: 'قسم المحاسبة',
   };
-
 
   // Load local caches once session is available
   useEffect(() => {
@@ -95,22 +88,21 @@ export default function App() {
     }
 
     if (batches.length === 0) {
-      // Set expiration dates to test FEFO warnings
       const today = new Date();
       
       const expiry1 = new Date();
-      expiry1.setMonth(today.getMonth() + 2); // Expiring in 2 months (Critical warning!)
+      expiry1.setMonth(today.getMonth() + 2);
       
       const expiry2 = new Date();
-      expiry2.setMonth(today.getMonth() + 10); // Expiring in 10 months (Safe)
+      expiry2.setMonth(today.getMonth() + 10);
 
       const expiry3 = new Date();
-      expiry3.setMonth(today.getMonth() + 4); // Expiring in 4 months (Warning!)
+      expiry3.setMonth(today.getMonth() + 4);
 
       setBatches([
-        { id: 'b1', batchNumber: 'AMX-2026-01', productId: '1', qty: 250, costPrice: 4200, expiryDate: expiry1.toISOString().split('T')[0], manufactureDate: '2025-01-10' },
-        { id: 'b2', batchNumber: 'PCT-2026-05', productId: '2', qty: 1500, costPrice: 950, expiryDate: expiry2.toISOString().split('T')[0], manufactureDate: '2025-05-15' },
-        { id: 'b3', batchNumber: 'INS-2026-11', productId: '3', qty: 85, costPrice: 18500, expiryDate: expiry3.toISOString().split('T')[0], manufactureDate: '2025-02-01' },
+        { id: 'b1', batchNumber: 'AMX-2026-01', productId: '1', qty: 250, costPrice: 4200, expiryDate: expiry1.toISOString().split('T')[0], manufactureDate: '2025-01-10', productName: 'Amoxicillin 500mg' },
+        { id: 'b2', batchNumber: 'PCT-2026-05', productId: '2', qty: 1500, costPrice: 950, expiryDate: expiry2.toISOString().split('T')[0], manufactureDate: '2025-05-15', productName: 'Paracetamol 500mg' },
+        { id: 'b3', batchNumber: 'INS-2026-11', productId: '3', qty: 85, costPrice: 18500, expiryDate: expiry3.toISOString().split('T')[0], manufactureDate: '2025-02-01', productName: 'Insulin Glargine 100 IU/ml' },
       ]);
     }
 
@@ -122,7 +114,6 @@ export default function App() {
       ]);
     }
 
-    // Bootstrap supplier demo data
     if (suppliers.length === 0) {
       setSuppliers([
         {
@@ -187,7 +178,7 @@ export default function App() {
   const primaryContact = user.email ?? user.phone;
   const userRoleLabel = roleLabels[user.role] ?? 'مستخدم';
 
-  // Sidebar navigation options
+  // Navigation options
   const navItems = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { id: 'inventory', label: 'المخزون الدوائي', icon: PackageSearch },
@@ -196,14 +187,26 @@ export default function App() {
     { id: 'suppliers', label: 'الموردين', icon: Building2 },
   ];
 
+  // Render active view
+  const renderView = () => {
+    switch (activeTab) {
+      case 'dashboard': return <Dashboard />;
+      case 'inventory': return <Inventory />;
+      case 'sales': return <Sales />;
+      case 'customers': return <Customers />;
+      case 'suppliers': return <Suppliers />;
+      default: return <Dashboard />;
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row relative overflow-hidden bg-[var(--bg-primary)] transition-colors duration-300">
       {/* Glow backgrounds for aesthetics */}
       <div className="glow-bg top-[-10%] right-[-10%] w-[350px] h-[350px] bg-emerald-500/10" />
       <div className="glow-bg bottom-[-10%] left-[-10%] w-[350px] h-[350px] bg-teal-500/10" />
 
-      {/* Right Sidebar (Arabic RTL layout) */}
-      <aside className="w-full md:w-64 glass-card border-l border-[var(--border-color)] flex flex-col justify-between z-10 p-5 md:sticky md:top-0 md:h-screen text-right" dir="rtl">
+      {/* Desktop Sidebar (Arabic RTL layout) */}
+      <aside className="hidden md:flex md:w-64 glass-card border-l border-[var(--border-color)] flex-col justify-between z-10 p-5 md:sticky md:top-0 md:h-screen text-right" dir="rtl">
         <div className="space-y-6">
           {/* Logo & Branding */}
           <div className="flex items-center gap-3 py-2 border-b border-[var(--border-color)] justify-end">
@@ -224,7 +227,7 @@ export default function App() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id as any)}
+                  onClick={() => setActiveTab(item.id as ViewType)}
                   className={`w-full flex items-center justify-end gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
                     isActive 
                       ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' 
@@ -302,14 +305,152 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 p-6 md:p-10 z-10 overflow-y-auto max-h-screen">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'inventory' && <Inventory />}
-        {activeTab === 'sales' && <Sales />}
-        {activeTab === 'customers' && <Customers />}
-        {activeTab === 'suppliers' && <Suppliers />}
+      {/* Mobile Header with Drawer Toggle */}
+      <header className="md:hidden glass-card border-b border-[var(--border-color)] p-4 flex items-center justify-between z-20" dir="rtl">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-xl">
+            <HeartHandshake className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold font-display text-[var(--text-primary)]">المثنى للأدوية</h2>
+            <span className="text-[9px] text-emerald-500 uppercase tracking-wider">نظام التوزيع</span>
+          </div>
+        </div>
+        
+        <button
+          onClick={() => setMobileDrawerOpen(true)}
+          className="p-3 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      </header>
+
+      {/* Mobile Drawer */}
+      {mobileDrawerOpen && (
+        <div className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setMobileDrawerOpen(false)}>
+          <aside 
+            className="absolute right-0 top-0 h-full w-80 max-w-[85%] glass-card border-l border-[var(--border-color)] flex flex-col justify-between p-5 text-right" 
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-6">
+              {/* User Info */}
+              <div className="glass-card rounded-2xl border border-[var(--border-color)] bg-[var(--glass-bg)] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-[var(--text-primary)]">{user.name}</p>
+                    <p className="text-xs text-[var(--text-secondary)]">{primaryContact}</p>
+                  </div>
+                  <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-500">
+                    <UserCircle2 className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-[10px] text-emerald-400">
+                  <span>{userRoleLabel}</span>
+                  <span>جلسة فعالة</span>
+                </div>
+              </div>
+
+              {/* Navigation Links */}
+              <nav className="space-y-2">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => { setActiveTab(item.id as ViewType); setMobileDrawerOpen(false); }}
+                      className={`w-full flex items-center justify-end gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                        isActive 
+                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' 
+                          : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]/30 hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      <span>{item.label}</span>
+                      <Icon className="w-5 h-5" />
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="space-y-4 pt-4 border-t border-[var(--border-color)]">
+              <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
+                <span className="flex items-center gap-1.5">
+                  {isOffline ? (
+                    <>
+                      <WifiOff className="w-4 h-4 text-rose-500 animate-pulse" />
+                      <span className="text-rose-500 font-bold">دون اتصال</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="w-4 h-4 text-emerald-500" />
+                      <span className="text-emerald-500 font-bold">متصل بالشبكة</span>
+                    </>
+                  )}
+                </span>
+                <span>حالة الخدمة</span>
+              </div>
+
+              <button
+                onClick={toggleTheme}
+                className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] text-sm font-semibold transition-all cursor-pointer"
+              >
+                {theme === 'dark' ? (
+                  <>
+                    <Sun className="w-4 h-4 text-amber-400" />
+                    <span>الوضع النهاري</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="w-4 h-4 text-indigo-500" />
+                    <span>الوضع الليلي</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={logout}
+                className="w-full flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-500 transition-all hover:border-emerald-500 hover:bg-emerald-500 hover:text-white"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>تسجيل الخروج</span>
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* Main Content Area - Desktop */}
+      <main className="hidden md:block flex-1 p-6 md:p-10 z-10 overflow-y-auto max-h-screen">
+        {renderView()}
       </main>
+
+      {/* Main Content Area - Mobile */}
+      <main className="md:hidden flex-1 p-4 sm:p-5 z-10 overflow-y-auto safe-area-bottom">
+        {renderView()}
+      </main>
+
+      {/* Mobile Bottom Tabs */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 glass-card border-t border-[var(--border-color)] bottom-tabs h-16 sm:h-20 flex items-center justify-around px-2 z-20">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as ViewType)}
+              className="flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 min-w-[60px] touch-target"
+            >
+              <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`} />
+              <span className={`text-[10px] sm:text-xs font-medium ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`}>
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

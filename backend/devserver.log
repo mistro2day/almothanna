@@ -58,3 +58,42 @@
 [32m[Nest] 34388  - [39m05/30/2026, 6:03:13 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +46ms[39m
 [32m[Nest] 34388  - [39m05/30/2026, 6:03:13 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +1ms[39m
 [32m[Nest] 34388  - [39m05/30/2026, 6:03:13 AM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +116ms[39m
+[2J[3J[H[[90m6:08:39 AM[0m] File change detected. Starting incremental compilation...
+
+[2J[3J[H[[90m6:24:51 AM[0m] File change detected. Starting incremental compilation...
+
+[[90m6:24:52 AM[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m6:24:52 AM[0m] File change detected. Starting incremental compilation...
+
+[[90m6:24:54 AM[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m6:24:56 AM[0m] File change detected. Starting incremental compilation...
+
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +36ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSalesModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +8ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/, GET} route[39m[38;5;3m +6ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSalesController {/sales}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/sales, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/sales/offline, POST} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 35344  - [39m05/30/2026, 6:24:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +2ms[39m
+[[90m6:24:56 AM[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +53ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSalesModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +8ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/, GET} route[39m[38;5;3m +8ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSalesController {/sales}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/sales, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/sales/offline, POST} route[39m[38;5;3m +3ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:58 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 12632  - [39m05/30/2026, 6:24:59 AM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +140ms[39m

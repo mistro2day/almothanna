@@ -73,17 +73,17 @@ export default function Customers() {
   });
 
   return (
-    <div className="space-y-6 animate-fade-in-slide">
+    <div className="space-y-6 animate-fade-in-slide pb-20 lg:pb-0" dir="rtl">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-[var(--text-primary)]">العملاء والتوزيع</h1>
-          <p className="text-[var(--text-secondary)] mt-1 text-sm md:text-base">إدارة حسابات الصيدليات والموزعين وخطوط الشحن للولايات</p>
+          <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-[var(--text-primary)]">العملاء والتوزيع</h1>
+          <p className="text-[var(--text-secondary)] mt-1 text-sm sm:text-base">إدارة حسابات الصيدليات والموزعين وخطوط الشحن للولايات</p>
         </div>
 
         <button 
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer"
+          className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer touch-target w-full sm:w-auto"
         >
           <Plus className="w-4 h-4" />
           <span>إضافة عميل جديد</span>
