@@ -15,22 +15,3 @@ services:
         sync: false
       - key: DATABASE_URL_UNPOOLED
         sync: false
-
-  - type: web
-    name: almothanna-frontend
-    plan: free
-    env: static
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
-    pullRequestPreviewsEnabled: false
-    envVars:
-      - key: VITE_API_URL
-        value: https://almothanna-backend.onrender.com
-    headers:
-      - path: /*
-        name: X-Frame-Options
-        value: DENY
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
