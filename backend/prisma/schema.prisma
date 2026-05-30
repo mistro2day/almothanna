@@ -1,0 +1,234 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Role {
+  ADMIN
+  SALES
+  WAREHOUSE
+  ACCOUNTANT
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String   @unique
+  email     String?  @unique
+  password  String
+  role      Role     @default(SALES)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id             String         @id @default(uuid())
+  name           String
+  scientificName String?
+  barcode        String?        @unique
+  category       String?
+  unit           String         // e.g. Box, Strip, Vial
+  batches        Batch[]
+  saleItems      SaleItem[]
+  purchaseItems  PurchaseItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Batch {
+  id              String          @id @default(uuid())
+  batchNumber     String
+  productId       String
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplierId      String?
+  supplier        Supplier?       @relation("SupplierBatches", fields: [supplierId], references: [id], onDelete: SetNull)
+  qty             Int
+  costPrice       Float
+  expiryDate      DateTime
+  manufactureDate DateTime
+  stockMovements  StockMovement[]
+  saleItems       SaleItem[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([productId, batchNumber])
+}
+
+model Customer {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   // e.g. Pharmacy, Hospital, Distributor
+  state       String   // Sudan State e.g. Khartoum, Gezira, Red Sea
+  phone       String   @unique
+  creditLimit Float    @default(0)
+  sales       Sale[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum SaleStatus {
+  PENDING
+  PAID
+  PARTIAL
+  CANCELLED
+}
+
+model Sale {
+  id             String          @id @default(uuid())
+  customerId     String
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  total          Float
+  paid           Float           @default(0)
+  status         SaleStatus      @default(PENDING)
+  items          SaleItem[]
+  deliveryOrders DeliveryOrder[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model SaleItem {
+  id        String   @id @default(uuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batchId   String
+  batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  qty       Int
+  price     Float
+  createdAt DateTime @default(now())
+}
+
+enum MovementType {
+  IN
+  OUT
+}
+
+model StockMovement {
+  id        String       @id @default(uuid())
+  batchId   String
+  batch     Batch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  type      MovementType
+  qty       Int
+  reason    String       // e.g. "Purchase", "Sale", "Damage", "Return"
+  createdAt DateTime     @default(now())
+}
+
+enum DeliveryStatus {
+  PENDING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model DeliveryOrder {
+  id         String         @id @default(uuid())
+  saleId     String
+  sale       Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  state      String         // Sudan State
+  city       String
+  status     DeliveryStatus @default(PENDING)
+  driverName String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+}
+
+// ==========================================
+// Supplier Management Module
+// ==========================================
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHECK
+  MOBILE_MONEY
+}
+
+enum PurchaseStatus {
+  DRAFT
+  CONFIRMED
+  RECEIVED
+  PARTIAL
+  CANCELLED
+}
+
+enum PaymentTerms {
+  CASH_ON_DELIVERY
+  NET_7
+  NET_15
+  NET_30
+  NET_60
+  NET_90
+}
+
+model Supplier {
+  id              String           @id @default(uuid())
+  name            String
+  companyName     String?
+  type            String           // e.g. "pharma_company", "wholesaler", "manufacturer"
+  phone           String           @unique
+  email           String?
+  country         String           @default("السودان")
+  city            String?
+  address         String?
+  commercialReg   String?          // رقم السجل التجاري
+  contactPerson   String?          // شخص التواصل
+  contactPhone    String?          // رقم شخص التواصل
+  creditLimit     Float            @default(0)
+  paymentTerms    PaymentTerms     @default(CASH_ON_DELIVERY)
+  currency        String           @default("SDG") // SDG, USD, EUR
+  notes           String?
+  isActive        Boolean          @default(true)
+  purchaseOrders  PurchaseOrder[]
+  payments        SupplierPayment[]
+  batches         Batch[]          @relation("SupplierBatches")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model PurchaseOrder {
+  id           String         @id @default(uuid())
+  orderNumber  String         @unique
+  supplierId   String
+  supplier     Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  total        Float
+  paid         Float          @default(0)
+  status       PurchaseStatus @default(DRAFT)
+  items        PurchaseItem[]
+  notes        String?
+  receivedDate DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model PurchaseItem {
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batchNumber     String?
+  qty             Int
+  unitCost        Float
+  createdAt       DateTime      @default(now())
+}
+
+model SupplierPayment {
+  id            String        @id @default(uuid())
+  supplierId    String
+  supplier      Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  amount        Float
+  paymentMethod PaymentMethod @default(CASH)
+  reference     String?       // رقم الحوالة أو الشيك
+  notes         String?
+  paidAt        DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+}
