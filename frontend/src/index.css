@@ -119,3 +119,73 @@ body {
 .animate-fade-in-slide {
   animation: fadeInSlide 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Mobile-First Responsive System */
+/* Mobile spacing and font variables */
+@media (max-width: 768px) {
+  :root {
+    --mobile-spacing-xs: 0.75rem;
+    --mobile-spacing-sm: 1rem;
+    --mobile-spacing-md: 1.25rem;
+    --mobile-spacing-lg: 1.5rem;
+    --mobile-font-sm: 0.875rem;
+    --mobile-font-base: 1rem;
+    --mobile-font-lg: 1.125rem;
+  }
+
+  /* Prevent horizontal overflow globally, allow for table containers */
+  body, #root {
+    overflow-x: hidden;
+  }
+
+  /* Table scroll containers for mobile tables */
+  .table-scroll-mobile {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.5rem;
+  }
+
+  /* Mobile modal sheets */
+  .modal-sheet {
+    max-height: 90vh;
+    height: auto;
+    border-radius: 1.5rem 1.5rem 0 0;
+  }
+}
+
+/* Safe area support for mobile devices with notches */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
+  }
+  
+  .bottom-tabs {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
+    height: calc(4rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Minimum touch target size (44px) for mobile */
+@media (max-width: 768px) {
+  button, .cursor-pointer {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Ensure adequate tap targets for small elements */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Desktop: Default behavior restored */
+@media (min-width: 769px) {
+  .modal-sheet {
+    border-radius: 1.5rem;
+    max-height: 90vh;
+  }
+}

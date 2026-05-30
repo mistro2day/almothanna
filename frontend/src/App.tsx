@@ -26,7 +26,9 @@ import {
   WifiOff, 
   HeartHandshake,
   LogOut,
-  UserCircle2
+  UserCircle2,
+  Menu,
+  X
 } from 'lucide-react';
 
 export default function App() {
@@ -35,6 +37,16 @@ export default function App() {
   const user = useAuthStore((state) => state.user);
   const isOffline = useAuthStore((state) => state.isOffline);
   const logout = useAuthStore((state) => state.logout);
+  
+  // Mobile navigation state
+  const [mobileTab, setMobileTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers'>('dashboard');
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  
+  // Desktop active tab state
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers'>('dashboard');
+  
+  // Use appropriate tab state based on screen size
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   
   // Stores Caches
   const loadInventory = useInventoryStore((state) => state.loadLocalCache);
