@@ -1,7 +1,9 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY backend/ ./backend/
-RUN cd backend && npm install && DATABASE_URL="postgresql://localhost:5432/placeholder" npx prisma generate && npm run build
+RUN cd backend && npm install
+RUN cd backend && npx prisma generate
+RUN cd backend && npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
