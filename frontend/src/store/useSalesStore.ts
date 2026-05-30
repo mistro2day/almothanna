@@ -19,20 +19,34 @@ export interface CartItem {
   costPrice: number;
 }
 
+export interface OfflineSalesQueueItem {
+  id: string;
+  cart: CartItem[];
+  customerId: string;
+  customerName: string;
+  total: number;
+  timestamp: string;
+}
+
 interface SalesState {
   customers: Customer[];
   cart: CartItem[];
+  offlineSalesQueue: OfflineSalesQueueItem[];
   setCustomers: (customers: Customer[]) => void;
   addToCart: (item: CartItem) => void;
   removeFromCart: (batchId: string) => void;
   updateCartQty: (batchId: string, qty: number) => void;
   clearCart: () => void;
+  addToOfflineQueue: (item: OfflineSalesQueueItem) => void;
+  removeFromOfflineQueue: (id: string) => void;
+  clearOfflineQueue: () => void;
 }
 
 export const useSalesStore = create<SalesState>((set) => {
   return {
     customers: [],
     cart: [],
+    offlineSalesQueue: [],
 
     setCustomers: (customers) => {
       set({ customers });
@@ -65,5 +79,19 @@ export const useSalesStore = create<SalesState>((set) => {
     },
 
     clearCart: () => set({ cart: [] }),
+
+    addToOfflineQueue: (item) => {
+      set((state) => ({
+        offlineSalesQueue: [...state.offlineSalesQueue, item],
+      }));
+    },
+
+    removeFromOfflineQueue: (id) => {
+      set((state) => ({
+        offlineSalesQueue: state.offlineSalesQueue.filter((i) => i.id !== id),
+      }));
+    },
+
+    clearOfflineQueue: () => set({ offlineSalesQueue: [] }),
   };
 });
