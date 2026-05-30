@@ -19,42 +19,23 @@ export interface CartItem {
   costPrice: number;
 }
 
-export interface OfflineSale {
-  id: string;
-  customerId: string;
-  customerName: string;
-  items: CartItem[];
-  total: number;
-  paid: number;
-  status: 'PENDING' | 'PAID' | 'PARTIAL';
-  createdAt: string;
-}
-
 interface SalesState {
   customers: Customer[];
   cart: CartItem[];
-  offlineSalesQueue: OfflineSale[];
   setCustomers: (customers: Customer[]) => void;
   addToCart: (item: CartItem) => void;
   removeFromCart: (batchId: string) => void;
   updateCartQty: (batchId: string, qty: number) => void;
   clearCart: () => void;
-  addOfflineSale: (sale: OfflineSale) => void;
-  updateOfflineSalePayment: (saleId: string, amount: number) => void;
-  clearOfflineSalesQueue: () => void;
-  loadLocalCache: () => void;
-  saveLocalCache: () => void;
 }
 
-export const useSalesStore = create<SalesState>((set, get) => {
+export const useSalesStore = create<SalesState>((set) => {
   return {
     customers: [],
     cart: [],
-    offlineSalesQueue: [],
 
     setCustomers: (customers) => {
       set({ customers });
-      get().saveLocalCache();
     },
 
     addToCart: (item) => {
@@ -84,44 +65,5 @@ export const useSalesStore = create<SalesState>((set, get) => {
     },
 
     clearCart: () => set({ cart: [] }),
-
-    addOfflineSale: (sale) => {
-      set((state) => ({
-        offlineSalesQueue: [...state.offlineSalesQueue, sale],
-      }));
-      get().saveLocalCache();
-    },
-
-    updateOfflineSalePayment: (saleId, amount) => {
-      set((state) => ({
-        offlineSalesQueue: state.offlineSalesQueue.map((s) => {
-          if (s.id !== saleId) return s;
-          const newPaid = s.paid + amount;
-          const newStatus: 'PENDING' | 'PAID' | 'PARTIAL' = newPaid >= s.total ? 'PAID' : 'PARTIAL';
-          return { ...s, paid: newPaid, status: newStatus };
-        }),
-      }));
-      get().saveLocalCache();
-    },
-
-    clearOfflineSalesQueue: () => {
-      set({ offlineSalesQueue: [] });
-      get().saveLocalCache();
-    },
-
-    loadLocalCache: () => {
-      const cachedCustomers = localStorage.getItem('cache_customers');
-      const cachedQueue = localStorage.getItem('offline_sales_queue');
-      set({
-        customers: cachedCustomers ? JSON.parse(cachedCustomers) : [],
-        offlineSalesQueue: cachedQueue ? JSON.parse(cachedQueue) : [],
-      });
-    },
-
-    saveLocalCache: () => {
-      const { customers, offlineSalesQueue } = get();
-      localStorage.setItem('cache_customers', JSON.stringify(customers));
-      localStorage.setItem('offline_sales_queue', JSON.stringify(offlineSalesQueue));
-    },
   };
 });

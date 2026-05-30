@@ -51,7 +51,6 @@ export default function App() {
   const setProducts = useInventoryStore((state) => state.setProducts);
   const setBatches = useInventoryStore((state) => state.setBatches);
 
-  const loadSales = useSalesStore((state) => state.loadLocalCache);
   const customers = useSalesStore((state) => state.customers);
   const setCustomers = useSalesStore((state) => state.setCustomers);
 
@@ -73,9 +72,8 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     loadInventory();
-    loadSales();
     loadSuppliers();
-  }, [user, loadInventory, loadSales, loadSuppliers]);
+  }, [user, loadInventory, loadSuppliers]);
 
   // Hydrate with initial data if local storage cache is empty (Offline First bootstrap)
   useEffect(() => {

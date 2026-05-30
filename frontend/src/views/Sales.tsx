@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useInventoryStore, Batch } from '../store/useInventoryStore';
-import { useSalesStore, Customer, CartItem, OfflineSale } from '../store/useSalesStore';
-import { useAuthStore } from '../store/useAuthStore';
-import { apiClient, syncOfflineSales } from '../api/apiClient';
+import { useSalesStore, Customer, CartItem } from '../store/useSalesStore';
+import { apiClient } from '../api/apiClient';
 import { 
   ShoppingCart, 
   UserCheck, 
@@ -40,8 +39,7 @@ type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
 
 export default function Sales() {
   const { products, batches, getFEFOBatches, decrementBatchQty } = useInventoryStore();
-  const { customers, cart, offlineSalesQueue, addToCart, removeFromCart, updateCartQty, clearCart, addOfflineSale, updateOfflineSalePayment } = useSalesStore();
-  const { isOffline } = useAuthStore();
+  const { customers, cart, addToCart, removeFromCart, updateCartQty, clearCart } = useSalesStore();
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedProductId, setSelectedProductId] = useState('');
@@ -57,6 +55,7 @@ export default function Sales() {
   const [issuingInvoice, setIssuingInvoice] = useState(false);
   const [sales, setSales] = useState<Invoice[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
 
   // Payment modal state
   const [paymentModal, setPaymentModal] = useState<{ open: boolean; invoice: Invoice | null; amount: number; loading: boolean }>({
@@ -66,26 +65,7 @@ export default function Sales() {
     loading: false,
   });
 
-  const mapOfflineSaleToInvoice = (sale: OfflineSale): Invoice => ({
-    id: sale.id,
-    customerName: sale.customerName,
-    total: sale.total,
-    paid: sale.paid,
-    status: sale.status,
-    createdAt: sale.createdAt,
-    items: sale.items.map((item) => ({
-      productName: item.productName,
-      batchNumber: item.batchNumber,
-      qty: item.qty,
-      price: item.price,
-    })),
-  });
-
-  const invoiceList = isOffline
-    ? offlineSalesQueue.map(mapOfflineSaleToInvoice)
-    : [...sales, ...offlineSalesQueue.map(mapOfflineSaleToInvoice)];
-
-  const filteredInvoiceList = invoiceList.filter((sale) => {
+  const filteredInvoiceList = sales.filter((sale) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.trim().toLowerCase();
     const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
@@ -144,24 +124,24 @@ export default function Sales() {
     setQty(1);
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.qty * item.price), 0);
+  const cartTotal = cart.reduce((sum: number, item: CartItem) => sum + (item.qty * item.price), 0);
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
   const loadSales = async () => {
     try {
+      setLoading(true);
       const { data } = await apiClient.get<Invoice[]>('/sales');
       setSales(data);
     } catch (error) {
       console.error('Failed to load sales from server:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!isOffline) {
-      // First sync any offline sales, then load all sales from server
-      syncOfflineSales().then(() => loadSales());
-    }
-  }, [isOffline]);
+    loadSales();
+  }, []);
 
   const handlePrint = (sale: Invoice) => {
     const remaining = Math.max(0, sale.total - sale.paid);
@@ -173,7 +153,7 @@ export default function Sales() {
 
     const itemsRows = sale.items
       .map(
-        (item, i) => `
+        (item: InvoiceItem, i: number) => `
         <tr>
           <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${i + 1}</td>
           <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: right;">${item.productName}</td>
@@ -194,35 +174,15 @@ export default function Sales() {
   <style>
     @page { size: A4; margin: 15mm 12mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', 'Arial', sans-serif;
-      background: #fff;
-      color: #1e293b;
-      line-height: 1.6;
-    }
+    body { font-family: 'Segoe UI', 'Arial', sans-serif; background: #fff; color: #1e293b; line-height: 1.6; }
     .invoice-container { max-width: 190mm; margin: 0 auto; padding: 10px 0; }
-    .invoice-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 3px solid #10b981;
-      padding-bottom: 16px;
-      margin-bottom: 20px;
-    }
+    .invoice-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #10b981; padding-bottom: 16px; margin-bottom: 20px; }
     .company-info h1 { font-size: 22px; color: #065f46; margin-bottom: 4px; }
     .company-info p { font-size: 12px; color: #64748b; }
     .invoice-title { text-align: left; }
     .invoice-title h2 { font-size: 26px; color: #10b981; letter-spacing: 1px; }
     .invoice-title p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-    .meta-grid {
-      display: flex;
-      justify-content: space-between;
-      background: #f1f5f9;
-      border-radius: 8px;
-      padding: 14px 18px;
-      margin-bottom: 20px;
-      font-size: 13px;
-    }
+    .meta-grid { display: flex; justify-content: space-between; background: #f1f5f9; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 13px; }
     .meta-grid .col { display: flex; flex-direction: column; gap: 4px; }
     .meta-grid .col span:first-child { color: #64748b; font-size: 11px; }
     .meta-grid .col span:last-child { font-weight: 600; color: #1e293b; }
@@ -233,7 +193,6 @@ export default function Sales() {
     table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
     table thead th { background: #10b981; color: #fff; font-size: 12px; font-weight: 600; padding: 10px 6px; border: none; }
     table tbody tr:nth-child(even) { background: #f8fafc; }
-    table tbody tr:hover { background: #f1f5f9; }
     .totals { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 24px; }
     .totals .row { display: flex; justify-content: space-between; width: 260px; font-size: 14px; }
     .totals .row.total { font-size: 17px; font-weight: 700; color: #065f46; border-top: 2px solid #10b981; padding-top: 6px; }
@@ -262,16 +221,7 @@ export default function Sales() {
       <div class="col"><span>حالة الدفع</span><span class="status-badge status-${sale.status}">${statusLabel}</span></div>
     </div>
     <table>
-      <thead>
-        <tr>
-          <th style="width: 40px;">#</th>
-          <th>المنتج</th>
-          <th>رقم التشغيلة</th>
-          <th>الكمية</th>
-          <th>سعر الوحدة</th>
-          <th>الإجمالي</th>
-        </tr>
-      </thead>
+      <thead><tr><th style="width: 40px;">#</th><th>المنتج</th><th>رقم التشغيلة</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
       <tbody>${itemsRows}</tbody>
     </table>
     <div class="totals">
@@ -312,40 +262,13 @@ export default function Sales() {
 
     setPaymentModal((prev) => ({ ...prev, loading: true }));
 
-    const newPaid = invoice.paid + amount;
-    const newStatus = newPaid >= invoice.total ? 'PAID' : 'PARTIAL';
-
-    // Update local state first for responsiveness
-    const updateInvoiceInList = (list: Invoice[], id: string, updater: (inv: Invoice) => Invoice) =>
-      list.map((inv) => (inv.id === id ? updater(inv) : inv));
-
-    setSales((prev) =>
-      updateInvoiceInList(prev, invoice.id, (inv) => ({
-        ...inv,
-        paid: newPaid,
-        status: newStatus,
-      }))
-    );
-
-    // Also update the offline queue if this invoice exists in it
-    updateOfflineSalePayment(invoice.id, amount);
-
-    // If online, sync to server
-    if (!isOffline) {
-      try {
-        await apiClient.post(`/sales/${invoice.id}/pay`, { amount });
-      } catch (error) {
-        console.error('Failed to sync payment to server:', error);
-        // Store payment in offline payments queue to sync later
-        const offlinePayments = JSON.parse(localStorage.getItem('offline_payments') || '[]');
-        offlinePayments.push({ invoiceId: invoice.id, amount, createdAt: new Date().toISOString() });
-        localStorage.setItem('offline_payments', JSON.stringify(offlinePayments));
-      }
-    } else {
-      // Store payment in offline payments queue
-      const offlinePayments = JSON.parse(localStorage.getItem('offline_payments') || '[]');
-      offlinePayments.push({ invoiceId: invoice.id, amount, createdAt: new Date().toISOString() });
-      localStorage.setItem('offline_payments', JSON.stringify(offlinePayments));
+    try {
+      await apiClient.post(`/sales/${invoice.id}/pay`, { amount });
+      // Reload sales from server
+      await loadSales();
+    } catch (error) {
+      console.error('Failed to submit payment:', error);
+      alert('فشل في تسجيل الدفعة');
     }
 
     closePaymentModal();
@@ -354,55 +277,39 @@ export default function Sales() {
   const handleCheckout = async () => {
     if (!selectedCustomerId || cart.length === 0) return;
 
-    const invoiceId = `IN-${Date.now().toString().slice(-6)}`;
-    const sale: OfflineSale = {
-      id: invoiceId,
-      customerId: selectedCustomerId,
-      customerName: selectedCustomer?.name || 'Unknown',
-      items: [...cart],
-      total: cartTotal,
-      paid: paidAmount,
-      status: paidAmount >= cartTotal ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'PENDING',
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const response = await apiClient.post<Invoice>('/sales/offline', {
+        customerId: selectedCustomerId,
+        items: cart.map((item: CartItem) => ({
+          productId: item.productId,
+          batchId: item.batchId,
+          qty: item.qty,
+          price: item.price,
+        })),
+        total: cartTotal,
+        paid: paidAmount,
+        createdAt: new Date().toISOString(),
+      });
 
-    if (!isOffline) {
-      try {
-        const response = await apiClient.post<Invoice>('/sales/offline', {
-          customerId: sale.customerId,
-          items: sale.items.map((item) => ({
-            productId: item.productId,
-            batchId: item.batchId,
-            qty: item.qty,
-            price: item.price,
-          })),
-          total: sale.total,
-          paid: sale.paid,
-          createdAt: sale.createdAt,
-        });
+      setInvoiceNumber(response.data.id);
+      setInvoiceSuccess(true);
 
-        setSales((prev) => [response.data, ...prev]);
-
-        // Decrement batch quantities in the local inventory store
-        sale.items.forEach((item) => {
-          decrementBatchQty(item.batchId, item.qty);
-        });
-      } catch (error) {
-        console.error('Failed to save sale on server, adding to offline queue:', error);
-        addOfflineSale(sale);
-      }
-    } else {
-      addOfflineSale(sale);
-      // Also decrement locally in offline mode
-      sale.items.forEach((item) => {
+      // Decrement batch quantities in the local inventory store
+      cart.forEach((item: CartItem) => {
         decrementBatchQty(item.batchId, item.qty);
       });
+
+      // Reload sales from server
+      await loadSales();
+    } catch (error) {
+      console.error('Failed to create sale:', error);
+      alert('فشل في إصدار الفاتورة');
+      return;
     }
 
-    setInvoiceNumber(invoiceId);
-    setInvoiceSuccess(true);
     clearCart();
     setPaidAmount(0);
+    setSelectedCustomerId('');
     setIssuingInvoice(false);
 
     setTimeout(() => {
@@ -410,10 +317,10 @@ export default function Sales() {
     }, 5000);
   };
 
-  const invoiceCount = invoiceList.length;
-  const totalSalesAmount = invoiceList.reduce((sum, sale) => sum + sale.total, 0);
-  const totalPaidAmount = invoiceList.reduce((sum, sale) => sum + sale.paid, 0);
-  const totalOutstanding = invoiceList.reduce((sum, sale) => sum + Math.max(0, sale.total - sale.paid), 0);
+  const invoiceCount = sales.length;
+  const totalSalesAmount = sales.reduce((sum: number, sale: Invoice) => sum + sale.total, 0);
+  const totalPaidAmount = sales.reduce((sum: number, sale: Invoice) => sum + sale.paid, 0);
+  const totalOutstanding = sales.reduce((sum: number, sale: Invoice) => sum + Math.max(0, sale.total - sale.paid), 0);
 
   const closeIssueModal = () => {
     setIssuingInvoice(false);
@@ -426,8 +333,8 @@ export default function Sales() {
     clearCart();
   };
 
-  // Mobile Invoice List Card Component
-  const InvoiceCard = ({ sale }: { sale: Invoice | OfflineSale }) => {
+  // Mobile Invoice Card Component
+  const InvoiceCard = ({ sale }: { sale: Invoice }) => {
     const remaining = Math.max(0, sale.total - sale.paid);
     return (
       <div className="glass-card p-4 rounded-xl border border-[var(--glass-border)] space-y-3">
@@ -464,7 +371,7 @@ export default function Sales() {
             <div className="flex items-center gap-1.5">
               {sale.status !== 'PAID' && (
                 <button
-                  onClick={() => openPaymentModal(sale as Invoice)}
+                  onClick={() => openPaymentModal(sale)}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-semibold transition-colors"
                 >
                   <DollarSign className="w-3.5 h-3.5" />
@@ -472,7 +379,7 @@ export default function Sales() {
                 </button>
               )}
               <button
-                onClick={() => handlePrint(sale as Invoice)}
+                onClick={() => handlePrint(sale)}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 text-xs font-semibold transition-colors"
               >
                 <Printer className="w-3.5 h-3.5" />
@@ -487,6 +394,14 @@ export default function Sales() {
 
   return (
     <div className="space-y-6 animate-fade-in-slide" dir="rtl">
+      {/* Success Toast */}
+      {invoiceSuccess && (
+        <div className="fixed top-4 right-4 z-50 bg-emerald-500 text-white px-6 py-3 rounded-2xl shadow-lg flex items-center gap-2">
+          <CheckCircle2 className="w-5 h-5" />
+          <span>تم إصدار الفاتورة {invoiceNumber} بنجاح</span>
+        </div>
+      )}
+
       {!issuingInvoice ? (
         <div className="space-y-6">
           {/* Page Header */}
@@ -507,7 +422,7 @@ export default function Sales() {
             </button>
           </div>
 
-          {/* KPI Cards - Mobile: 2 cols, Desktop: 4 cols */}
+          {/* KPI Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="glass-card p-4 sm:p-6 rounded-2xl border border-[var(--glass-border)]">
               <div className="flex items-center justify-between mb-3 sm:mb-4">
@@ -585,7 +500,12 @@ export default function Sales() {
               />
             </div>
 
-            {filteredInvoiceList.length === 0 ? (
+            {loading ? (
+              <div className="rounded-3xl border border-dashed border-[var(--border-color)] p-8 sm:p-10 text-center">
+                <div className="inline-block w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <p className="mt-3 text-[var(--text-secondary)]">جاري تحميل الفواتير...</p>
+              </div>
+            ) : filteredInvoiceList.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-[var(--border-color)] p-8 sm:p-10 text-center">
                 <p className="text-[var(--text-secondary)]">
                   {searchQuery.trim() ? 'لا توجد فواتير تطابق بحثك.' : 'لا توجد فواتير مسجلة حتى الآن.'}
@@ -595,7 +515,7 @@ export default function Sales() {
               <>
                 {/* Mobile: Cards View */}
                 <div className="lg:hidden space-y-3">
-                  {filteredInvoiceList.map((sale) => (
+                  {filteredInvoiceList.map((sale: Invoice) => (
                     <InvoiceCard key={sale.id} sale={sale} />
                   ))}
                 </div>
@@ -616,7 +536,7 @@ export default function Sales() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border-color)]">
-                      {filteredInvoiceList.map((sale) => {
+                      {filteredInvoiceList.map((sale: Invoice) => {
                         const remaining = Math.max(0, sale.total - sale.paid);
                         return (
                           <tr key={sale.id} className="hover:bg-[var(--border-color)]/30 transition-colors">
@@ -670,88 +590,49 @@ export default function Sales() {
           <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[var(--border-color)]">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)]">إصدار فاتورة جديدة</h1>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                تحديث شامل لمعلومات الفاتورة والعميل.
-              </p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">تحديث شامل لمعلومات الفاتورة والعميل.</p>
             </div>
-            <button
-              onClick={closeIssueModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-600 hover:bg-gray-700 text-white rounded-2xl font-semibold transition-colors touch-target"
-            >
-              <X className="w-4 h-4" />
-              <span>العودة</span>
+            <button onClick={closeIssueModal} className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-600 hover:bg-gray-700 text-white rounded-2xl font-semibold transition-colors">
+              <X className="w-4 h-4" /><span>العودة</span>
             </button>
           </div>
 
           <div className="p-4 sm:p-6" dir="rtl">
-            {/* Mobile: Single column layout */}
+            {/* Mobile Layout */}
             <div className="lg:hidden space-y-6">
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
                 <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-4">
-                  <UserCheck className="w-5 h-5" />
-                  بيانات العميل
+                  <UserCheck className="w-5 h-5" /> بيانات العميل
                 </div>
-                <div className="space-y-4">
-                  <select
-                    value={selectedCustomerId}
-                    onChange={(e) => setSelectedCustomerId(e.target.value)}
-                    className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11"
-                  >
-                    <option value="">اختر العميل للفاتورة</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name} - {c.state}</option>
-                    ))}
-                  </select>
-                  {selectedCustomer && (
-                    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
-                      <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
-                      <div>النوع: <strong>{selectedCustomer.type}</strong></div>
-                      <div>الولاية: <strong>{selectedCustomer.state}</strong></div>
-                    </div>
-                  )}
-                </div>
+                <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11">
+                  <option value="">اختر العميل للفاتورة</option>
+                  {customers.map((c: Customer) => (<option key={c.id} value={c.id}>{c.name} - {c.state}</option>))}
+                </select>
+                {selectedCustomer && (
+                  <div className="mt-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
+                    <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
+                    <div>النوع: <strong>{selectedCustomer.type}</strong></div>
+                    <div>الولاية: <strong>{selectedCustomer.state}</strong></div>
+                  </div>
+                )}
               </div>
 
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
                 <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-4">
-                  <ShoppingCart className="w-5 h-5" />
-                  إضافة أصناف الفاتورة
+                  <ShoppingCart className="w-5 h-5" /> إضافة أصناف الفاتورة
                 </div>
                 <form onSubmit={handleAddToCart} className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="block text-xs text-[var(--text-secondary)]">اختر المنتج</label>
-                    <select
-                      value={selectedProductId}
-                      onChange={(e) => setSelectedProductId(e.target.value)}
-                      className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11"
-                    >
-                      <option value="">اختر المنتج</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-xs text-[var(--text-secondary)]">التشغيلة</label>
-                    <select
-                      value={selectedBatchId}
-                      onChange={(e) => { setSelectedBatchId(e.target.value); const sb = batches.find(b => b.id === e.target.value); if (sb) setPrice(Math.round(sb.costPrice * 1.25)); }}
-                      disabled={fefoBatches.length === 0}
-                      className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50 h-11"
-                    >
-                      <option value="">اختر التشغيلة</option>
-                      {fefoBatches.map((b) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
-                    </select>
-                  </div>
+                  <select value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11">
+                    <option value="">اختر المنتج</option>
+                    {products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                  </select>
+                  <select value={selectedBatchId} onChange={(e) => { setSelectedBatchId(e.target.value); const sb = batches.find(b => b.id === e.target.value); if (sb) setPrice(Math.round(sb.costPrice * 1.25)); }} disabled={fefoBatches.length === 0} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50 h-11">
+                    <option value="">اختر التشغيلة</option>
+                    {fefoBatches.map((b: Batch) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
+                  </select>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="block text-xs text-[var(--text-secondary)]">الكمية</label>
-                      <input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="block text-xs text-[var(--text-secondary)]">سعر البيع</label>
-                      <input type="number" min={0.1} step="any" value={price} onChange={(e) => setPrice(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
-                    </div>
+                    <input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} placeholder="الكمية" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
+                    <input type="number" min={0.1} step="any" value={price} onChange={(e) => setPrice(Number(e.target.value))} placeholder="سعر البيع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
                   </div>
                   <button type="submit" disabled={!selectedBatchId} className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 h-11"><Plus className="w-4 h-4" />إضافة</button>
                 </form>
@@ -763,13 +644,13 @@ export default function Sales() {
                   <div className="rounded-2xl border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-secondary)]">لم يضف بعد أي منتج.</div>
                 ) : (
                   <div className="space-y-3 text-sm">
-                    {cart.map((item) => (
+                    {cart.map((item: CartItem) => (
                       <div key={item.batchId} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--bg-secondary)] p-3">
                         <div className="space-y-1 text-right">
                           <p className="font-medium text-[var(--text-primary)]">{item.productName}</p>
                           <p className="text-[var(--text-secondary)] text-xs">{item.batchNumber} • {item.qty} x {item.price} SDG</p>
                         </div>
-                        <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold h-11 touch-target">حذف</button>
+                        <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold h-11">حذف</button>
                       </div>
                     ))}
                   </div>
@@ -777,66 +658,54 @@ export default function Sales() {
               </div>
 
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10 space-y-5">
-                <div>
-                  <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-3">الملخص</h4>
-                  <div className="space-y-3 text-sm text-[var(--text-secondary)]">
-                    <div className="flex justify-between"><span>إجمالي الفاتورة</span><strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong></div>
-                    <div className="flex justify-between"><span>المدفوع حالياً</span><strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong></div>
-                    <div className="flex justify-between border-t border-[var(--border-color)] pt-3"><span className="font-semibold">المتبقي</span><strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong></div>
-                  </div>
+                <div className="space-y-3 text-sm text-[var(--text-secondary)]">
+                  <div className="flex justify-between"><span>إجمالي الفاتورة</span><strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong></div>
+                  <div className="flex justify-between"><span>المدفوع حالياً</span><strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong></div>
+                  <div className="flex justify-between border-t border-[var(--border-color)] pt-3"><span className="font-semibold">المتبقي</span><strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong></div>
                 </div>
-                <div className="space-y-2">
-                  <label className="block text-[var(--text-secondary)] font-semibold">المبلغ المدفوع</label>
-                  <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
-                </div>
-                <button onClick={handleCheckout} disabled={!selectedCustomerId || cart.length === 0} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors h-11 touch-target">إصدار الفاتورة</button>
+                <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} placeholder="المبلغ المدفوع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
+                <button onClick={handleCheckout} disabled={!selectedCustomerId || cart.length === 0} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors h-11">إصدار الفاتورة</button>
               </div>
             </div>
 
-            {/* Desktop: Grid Layout */}
+            {/* Desktop Layout */}
             <div className="hidden lg:grid lg:grid-cols-[2fr_420px] gap-6">
-              <div className="xl:col-span-1 space-y-6">
+              <div className="space-y-6">
                 <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
-                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><UserCheck className="w-5 h-5" />بيانات العميل</div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none">
-                      <option value="">اختر العميل للفاتورة</option>
-                      {customers.map((c) => (<option key={c.id} value={c.id}>{c.name} - {c.state}</option>))}
-                    </select>
-                    {selectedCustomer && (
-                      <div className="rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
-                        <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
-                        <div>النوع: <strong>{selectedCustomer.type}</strong></div>
-                        <div>الولاية: <strong>{selectedCustomer.state}</strong></div>
-                      </div>
-                    )}
-                  </div>
+                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><UserCheck className="w-5 h-5" /> بيانات العميل</div>
+                  <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none">
+                    <option value="">اختر العميل للفاتورة</option>
+                    {customers.map((c: Customer) => (<option key={c.id} value={c.id}>{c.name} - {c.state}</option>))}
+                  </select>
+                  {selectedCustomer && (
+                    <div className="mt-4 rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
+                      <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
+                      <div>النوع: <strong>{selectedCustomer.type}</strong></div>
+                      <div>الولاية: <strong>{selectedCustomer.state}</strong></div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
-                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><ShoppingCart className="w-5 h-5" />إضافة أصناف الفاتورة</div>
+                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><ShoppingCart className="w-5 h-5" /> إضافة أصناف الفاتورة</div>
                   <form onSubmit={handleAddToCart} className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
                     <div className="lg:col-span-2 space-y-1">
-                      <label className="block text-xs text-[var(--text-secondary)]">اختر المنتج</label>
+                      <label className="block text-xs text-[var(--text-secondary)]">المنتج</label>
                       <select value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none">
                         <option value="">اختر المنتج</option>
                         {products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs text-[var(--text-secondary)]">التشغيلة</label>
+                      <label className="block text-xs text-[var(--text-secondary)]">التشغيليلة</label>
                       <select value={selectedBatchId} onChange={(e) => { setSelectedBatchId(e.target.value); const sb = batches.find(b => b.id === e.target.value); if (sb) setPrice(Math.round(sb.costPrice * 1.25)); }} disabled={fefoBatches.length === 0} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50">
                         <option value="">اختر التشغيلة</option>
-                        {fefoBatches.map((b) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
+                        {fefoBatches.map((b: Batch) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
                       </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs text-[var(--text-secondary)]">الكمية</label>
                       <input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs text-[var(--text-secondary)]">سعر البيع</label>
-                      <input type="number" min={0.1} step="any" value={price} onChange={(e) => setPrice(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
                     </div>
                     <div className="lg:col-span-4 flex justify-end">
                       <button type="submit" disabled={!selectedBatchId} className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"><Plus className="w-4 h-4" />إضافة</button>
@@ -850,7 +719,7 @@ export default function Sales() {
                     <div className="rounded-3xl border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-secondary)]">لم يضف بعد أي منتج.</div>
                   ) : (
                     <div className="space-y-3 text-sm">
-                      {cart.map((item) => (
+                      {cart.map((item: CartItem) => (
                         <div key={item.batchId} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--bg-secondary)] p-3">
                           <div className="space-y-1 text-right">
                             <p className="font-medium text-[var(--text-primary)]">{item.productName}</p>
@@ -890,22 +759,14 @@ export default function Sales() {
       {paymentModal.open && paymentModal.invoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={closePaymentModal}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div
-            className="relative z-10 w-full max-w-md glass-card rounded-3xl border border-[var(--glass-border)] p-6 sm:p-8 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-            dir="rtl"
-          >
+          <div className="relative z-10 w-full max-w-md glass-card rounded-3xl border border-[var(--glass-border)] p-6 sm:p-8 shadow-2xl" onClick={(e) => e.stopPropagation()} dir="rtl">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold text-[var(--text-primary)]">سداد الفاتورة</h3>
-              <button
-                onClick={closePaymentModal}
-                className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors"
-              >
+              <button onClick={closePaymentModal} className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Invoice summary */}
             <div className="glass-card rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 mb-6 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-[var(--text-secondary)]">رقم الفاتورة</span>
@@ -929,58 +790,29 @@ export default function Sales() {
               </div>
             </div>
 
-            {/* Payment input */}
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-[var(--text-secondary)] mb-2">مبلغ السداد</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min={1}
-                    max={Math.max(0, paymentModal.invoice.total - paymentModal.invoice.paid)}
-                    step="any"
-                    value={paymentModal.amount}
-                    onChange={(e) => setPaymentModal((prev) => ({ ...prev, amount: Number(e.target.value) }))}
-                    className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-5 py-4 text-xl font-bold text-[var(--text-primary)] outline-none text-center focus:border-emerald-500/50 transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Quick amount buttons */}
+              <input type="number" min={1} max={Math.max(0, paymentModal.invoice.total - paymentModal.invoice.paid)} step="any" value={paymentModal.amount} onChange={(e) => setPaymentModal((prev) => ({ ...prev, amount: Number(e.target.value) }))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-5 py-4 text-xl font-bold text-[var(--text-primary)] outline-none text-center focus:border-emerald-500/50 transition-colors" />
+              
               <div className="grid grid-cols-3 gap-2">
                 {[0.25, 0.5, 0.75].map((fraction) => {
                   const remaining = paymentModal.invoice!.total - paymentModal.invoice!.paid;
                   const quickAmount = Math.round(remaining * fraction);
                   return (
-                    <button
-                      key={fraction}
-                      onClick={() => setPaymentModal((prev) => ({ ...prev, amount: quickAmount }))}
-                      className="px-3 py-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] text-xs font-semibold transition-colors"
-                    >
-                      {Math.round(fraction * 100)}% ({quickAmount.toLocaleString('en-US')})
+                    <button key={fraction} onClick={() => setPaymentModal((prev) => ({ ...prev, amount: quickAmount }))} className="px-3 py-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] text-xs font-semibold transition-colors">
+                      {Math.round(fraction * 100)}%
                     </button>
                   );
                 })}
-                <button
-                  onClick={() => setPaymentModal((prev) => ({ ...prev, amount: Math.max(0, prev.invoice!.total - prev.invoice!.paid) }))}
-                  className="px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-xs font-semibold transition-colors"
-                >
+                <button onClick={() => setPaymentModal((prev) => ({ ...prev, amount: Math.max(0, prev.invoice!.total - prev.invoice!.paid) }))} className="px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-xs font-semibold transition-colors">
                   كامل المبلغ
                 </button>
               </div>
 
-              <button
-                onClick={handlePaymentSubmit}
-                disabled={paymentModal.amount <= 0 || paymentModal.loading || paymentModal.amount > Math.max(0, paymentModal.invoice.total - paymentModal.invoice.paid)}
-                className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-              >
+              <button onClick={handlePaymentSubmit} disabled={paymentModal.amount <= 0 || paymentModal.loading || paymentModal.amount > Math.max(0, paymentModal.invoice.total - paymentModal.invoice.paid)} className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
                 {paymentModal.loading ? (
                   <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>تأكيد السداد</span>
-                  </>
+                  <><CheckCircle2 className="w-5 h-5" /><span>تأكيد السداد</span></>
                 )}
               </button>
             </div>
