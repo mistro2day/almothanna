@@ -2,6 +2,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY backend/ ./backend/
 RUN cd backend && npm install
+RUN rm -f ./backend/prisma/prisma.config.ts
 RUN cd backend && npx prisma generate
 RUN cd backend && npm run build
 
