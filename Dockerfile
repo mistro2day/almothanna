@@ -1,6 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY backend/package*.json ./backend/
+COPY backend/package-lock.json ./backend/
 RUN cd backend && npm ci
 COPY backend/ ./backend/
 RUN cd backend && DATABASE_URL="postgresql://localhost:5432/placeholder" npx prisma generate && npm run build
