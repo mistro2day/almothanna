@@ -3,10 +3,8 @@ services:
     name: almothanna-backend
     region: oregon
     plan: free
-    env: node
-    rootDir: backend
-    buildCommand: npm install && npm run build
-    startCommand: node dist/main.js
+    env: docker
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /
     envVars:
       - key: NODE_ENV
