@@ -865,13 +865,13 @@ export default function Sales() {
           <div className="p-4 sm:p-6" dir="rtl">
             {/* Mobile Layout */}
             <div className="lg:hidden space-y-6">
-              <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
+              <div className="glass-card-no-backdrop p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
                 <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-4">
                   <UserCheck className="w-5 h-5" /> بيانات العميل
                 </div>
-                <div className="relative w-full">
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
+                 <div className="relative w-full">
+                   <div className="flex gap-2">
+                     <div className="relative flex-1">
                       <input
                         type="text"
                         value={isCustomerDropdownOpen ? customerSearch : (selectedCustomer ? `${selectedCustomer.name} - ${selectedCustomer.state}` : '')}
@@ -889,8 +889,8 @@ export default function Sales() {
                       <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[var(--text-secondary)]">
                         <Search className="w-4 h-4" />
                       </div>
-                      {isCustomerDropdownOpen && (
-                        <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
+                       {isCustomerDropdownOpen && (
+                         <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
                           {filteredCustomersForSelect.length === 0 ? (
                             <button
                               type="button"
@@ -954,9 +954,9 @@ export default function Sales() {
                 <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-4">
                   <ShoppingCart className="w-5 h-5" /> إضافة أصناف الفاتورة
                 </div>
-                <form onSubmit={handleAddToCart} className="space-y-4">
-                  <div className="relative w-full">
-                    <div className="relative">
+                   <form onSubmit={handleAddToCart} className="space-y-4">
+                   <div className="relative w-full">
+                     <div className="relative">
                       <input
                         type="text"
                         value={isProductDropdownOpen ? productSearch : (products.find(p => p.id === selectedProductId)?.name || '')}
@@ -974,8 +974,8 @@ export default function Sales() {
                       <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[var(--text-secondary)]">
                         <Search className="w-4 h-4" />
                       </div>
-                      {isProductDropdownOpen && (
-                        <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
+                       {isProductDropdownOpen && (
+                         <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
                           {filteredProductsForSelect.length === 0 ? (
                             <div className="text-center py-3 text-xs text-[var(--text-secondary)]">لا توجد منتجات تطابق البحث</div>
                           ) : (
@@ -1075,11 +1075,11 @@ export default function Sales() {
             {/* Desktop Layout */}
             <div className="hidden lg:grid lg:grid-cols-[2fr_420px] gap-6">
               <div className="space-y-6">
-                <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
+                <div className="glass-card-no-backdrop p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
                   <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><UserCheck className="w-5 h-5" /> بيانات العميل</div>
-                  <div className="relative w-full">
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
+                   <div className="relative w-full">
+                     <div className="flex gap-2">
+                       <div className="relative flex-1">
                         <input
                           type="text"
                           value={isCustomerDropdownOpen ? customerSearch : (selectedCustomer ? `${selectedCustomer.name} - ${selectedCustomer.state}` : '')}
@@ -1154,17 +1154,17 @@ export default function Sales() {
                       <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
                       <div>النوع: <strong>{selectedCustomer.type}</strong></div>
                       <div>الولاية: <strong>{selectedCustomer.state}</strong></div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
-                  <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><ShoppingCart className="w-5 h-5" /> إضافة أصناف الفاتورة</div>
+                 </div>
+               )}
+             </div>
+ 
+             <div className="glass-card-no-backdrop p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
+               <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><ShoppingCart className="w-5 h-5" /> إضافة أصناف الفاتورة</div>
                   <form onSubmit={handleAddToCart} className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
-                    <div className="lg:col-span-2 space-y-1 relative">
+                     <div className="lg:col-span-2 space-y-1 relative">
                       <label className="block text-xs text-[var(--text-secondary)]">المنتج</label>
-                      <div className="relative w-full">
-                        <div className="relative">
+                   <div className="relative w-full">
+                     <div className="relative">
                           <input
                             type="text"
                             value={isProductDropdownOpen ? productSearch : (products.find(p => p.id === selectedProductId)?.name || '')}
