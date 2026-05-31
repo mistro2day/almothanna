@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useInventoryStore, Batch } from '../store/useInventoryStore';
 import { useSalesStore, Customer, CartItem } from '../store/useSalesStore';
 import { apiClient } from '../api/apiClient';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { 
   ShoppingCart, 
   UserCheck, 
@@ -45,6 +47,8 @@ type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
 export default function Sales() {
   const { products, batches, getFEFOBatches, decrementBatchQty } = useInventoryStore();
   const { customers, cart, addToCart, removeFromCart, updateCartQty, clearCart, addCustomer } = useSalesStore();
+  const { settings } = useSettingsStore();
+  const { user } = useAuthStore();
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
@@ -243,9 +247,22 @@ export default function Sales() {
   }, []);
 
   const handlePrint = (sale: Invoice) => {
+    const currency = settings?.currency || "SDG";
     const remaining = Math.max(0, sale.total - sale.paid);
     const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
-    const paidLabel = sale.paid > 0 ? sale.paid.toLocaleString('en-US') + ' SDG' : '---';
+    const paidLabel = sale.paid > 0 ? sale.paid.toLocaleString('en-US') + ' ' + currency : '---';
+
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyPhone = settings?.phone || "0912345678";
+    const companyEmail = settings?.email ? ` &nbsp;|&nbsp; البريد: ${settings.email}` : "";
+    const companyAddress = settings?.address || "السودان - أمدرمان";
+    const companyLogoHtml = settings?.logo 
+      ? `<img src="${settings.logo}" style="max-height: 60px; object-contain: fit; margin-bottom: 6px;" />` 
+      : `<h1>${companyName}</h1>`;
+    const regAndTaxHtml = (settings?.commercialReg || settings?.taxNumber)
+      ? `<p style="font-size: 11px; color: #64748b;">${settings.commercialReg ? 'سجل تجاري: ' + settings.commercialReg : ''} ${settings.taxNumber ? ' &nbsp;|&nbsp; رقم ضريبي: ' + settings.taxNumber : ''}</p>`
+      : '';
+    const footerText = settings?.invoiceFooter || "شكراً لتعاملكم مع المثنى للأدوية";
 
     const printWindow = window.open('', '_blank', 'width=800,height=600');
     if (!printWindow) return;
@@ -304,9 +321,10 @@ export default function Sales() {
   <div class="invoice-container">
     <div class="invoice-header">
       <div class="company-info">
-        <h1>المثنى للأدوية</h1>
-        <p>شركة توزيع الأدوية والمستلزمات الطبية</p>
-        <p>الخرطوم - السودان &nbsp;|&nbsp; هاتف: 0918 100 100</p>
+        ${companyLogoHtml}
+        <h1 style="font-size: 20px; color: #065f46; margin: 4px 0;">${companyName}</h1>
+        <p>${companyAddress} &nbsp;|&nbsp; هاتف: ${companyPhone} ${companyEmail}</p>
+        ${regAndTaxHtml}
       </div>
       <div class="invoice-title">
         <h2>فاتورة مبيعات</h2>
@@ -325,12 +343,12 @@ export default function Sales() {
     </table>
     <div class="totals">
       <div class="row"><span>المدفوع:</span><span style="color: #10b981; font-weight: 600;">${paidLabel}</span></div>
-      <div class="row"><span>المتبقي:</span><span style="color: ${remaining > 0 ? '#e11d48' : '#10b981'}; font-weight: 600;">${remaining > 0 ? remaining.toLocaleString('en-US') + ' SDG' : '---'}</span></div>
-      <div class="row total"><span>الإجمالي:</span><span>${sale.total.toLocaleString('en-US')} SDG</span></div>
+      <div class="row"><span>المتبقي:</span><span style="color: ${remaining > 0 ? '#e11d48' : '#10b981'}; font-weight: 600;">${remaining > 0 ? remaining.toLocaleString('en-US') + ' ' + currency : '---'}</span></div>
+      <div class="row total"><span>الإجمالي:</span><span>${sale.total.toLocaleString('en-US')} ${currency}</span></div>
     </div>
     <div class="invoice-footer">
-      <div><p>شكراً لتعاملكم مع المثنى للأدوية</p><p>تم إصدار هذه الفاتورة إلكترونياً</p></div>
-      <div class="stamp">المثنى للأدوية</div>
+      <div><p>${footerText}</p><p>تم إصدار هذه الفاتورة إلكترونياً</p></div>
+      <div class="stamp">${companyName}</div>
     </div>
   </div>
   <script>window.onload = function() { window.print(); };<\/script>
@@ -369,6 +387,10 @@ export default function Sales() {
   };
 
   const handleExportPDF = () => {
+    const currency = settings?.currency || "SDG";
+    const companyName = settings?.name || "المثنى للأدوية";
+    const footerText = settings?.invoiceFooter || "شكراً لتعاملكم مع المثنى للأدوية";
+
     const printWindow = window.open('', '_blank', 'width=1000,height=800');
     if (!printWindow) return;
 
@@ -381,9 +403,9 @@ export default function Sales() {
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${sale.id}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${sale.customerName}</td>
           <td style="text-align: center; padding: 8px; border: 1px solid #ddd;">${new Date(sale.createdAt).toLocaleDateString('ar-SA')}</td>
-          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; font-weight: bold;">${sale.total.toLocaleString('en-US')} SDG</td>
-          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; color: #10b981;">${sale.paid.toLocaleString('en-US')} SDG</td>
-          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; color: #rose-500;">${remaining.toLocaleString('en-US')} SDG</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; font-weight: bold;">${sale.total.toLocaleString('en-US')} ${currency}</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; color: #10b981;">${sale.paid.toLocaleString('en-US')} ${currency}</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; color: #rose-500;">${remaining.toLocaleString('en-US')} ${currency}</td>
           <td style="text-align: center; padding: 8px; border: 1px solid #ddd;">${statusLabel}</td>
         </tr>
       `;
@@ -408,7 +430,7 @@ export default function Sales() {
   </style>
 </head>
 <body>
-  <h1>المثنى للأدوية</h1>
+  <h1>${companyName}</h1>
   <p class="subtitle">تقرير سجل الفواتير والمبيعات - تاريخ التصدير: ${new Date().toLocaleDateString('ar-SA')}</p>
   <table>
     <thead>
@@ -428,7 +450,8 @@ export default function Sales() {
     </tbody>
   </table>
   <div class="footer">
-    <p>تم استخراج هذا التقرير تلقائياً من نظام سجلات المثنى للأدوية</p>
+    <p>تم استخراج هذا التقرير تلقائياً من نظام سجلات ${companyName}</p>
+    <p>${footerText}</p>
   </div>
   <script>window.onload = function() { window.print(); };<\/script>
 </body>
@@ -1393,16 +1416,18 @@ export default function Sales() {
             {/* Action Buttons Row */}
             <div className="flex flex-wrap gap-2 mb-6 bg-[var(--bg-primary)] p-3 rounded-2xl border border-[var(--border-color)]">
               <span className="text-xs font-bold text-[var(--text-secondary)] w-full mb-1">إجراءات الفاتورة:</span>
-              <button
-                onClick={() => {
-                  setEditDateValue(selectedInvoice.createdAt.split('T')[0]);
-                  setIsEditingDate(!isEditingDate);
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <Edit3 className="w-4 h-4" />
-                <span>تعديل التاريخ</span>
-              </button>
+              {user?.role === 'ADMIN' && (
+                <button
+                  onClick={() => {
+                    setEditDateValue(selectedInvoice.createdAt.split('T')[0]);
+                    setIsEditingDate(!isEditingDate);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  <span>تعديل التاريخ</span>
+                </button>
+              )}
               <button
                 onClick={() => handlePrint(selectedInvoice)}
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
@@ -1417,13 +1442,15 @@ export default function Sales() {
                 <Download className="w-4 h-4" />
                 <span>تصدير PDF</span>
               </button>
-              <button
-                onClick={() => setDeleteConfirm({ open: true, invoiceId: selectedInvoice.id, loading: false })}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer sm:mr-auto"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>حذف الفاتورة</span>
-              </button>
+              {user?.role === 'ADMIN' && (
+                <button
+                  onClick={() => setDeleteConfirm({ open: true, invoiceId: selectedInvoice.id, loading: false })}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer sm:mr-auto"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>حذف الفاتورة</span>
+                </button>
+              )}
             </div>
 
             {/* Inline Date Editor */}

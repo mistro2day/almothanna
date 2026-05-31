@@ -239,3 +239,18 @@ model SupplierPayment {
   paidAt        DateTime      @default(now())
   createdAt     DateTime      @default(now())
 }
+
+model CompanySettings {
+  id            String   @id @default(uuid())
+  name          String   @default("المثنى للأدوية")
+  phone         String   @default("0912345678")
+  email         String?  @default("info@almothanna.com")
+  address       String?  @default("السودان - أمدرمان")
+  logo          String?  // Base64 logo format
+  commercialReg String?  @default("12345")
+  taxNumber     String?  @default("67890")
+  currency      String   @default("SDG")
+  invoiceFooter String?  @default("شكراً لتعاملكم معنا - المثنى للأدوية")
+  updatedAt     DateTime @updatedAt
+}
+

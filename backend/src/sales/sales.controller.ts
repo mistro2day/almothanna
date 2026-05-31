@@ -6,6 +6,11 @@ import { CreateSaleDto } from './dto/create-sale.dto';
 export class SalesController {
   constructor(private readonly salesService: SalesService) {}
 
+  @Get('dashboard-stats')
+  async getDashboardStats() {
+    return this.salesService.getDashboardStats();
+  }
+
   @Get()
   async getSales() {
     return this.salesService.listSales();
@@ -26,3 +31,4 @@ export class SalesController {
     return this.salesService.updateSaleDate(id, createdAt);
   }
 }
+

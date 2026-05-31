@@ -36,4 +36,31 @@ export class BatchesService {
       },
     });
   }
+
+  async addQty(id: string, additionalQty: number) {
+    const batch = await this.prisma.batch.update({
+      where: { id },
+      data: {
+        qty: {
+          increment: additionalQty,
+        },
+      },
+      include: {
+        product: true,
+      },
+    });
+
+    // Register StockMovement IN
+    await this.prisma.stockMovement.create({
+      data: {
+        batchId: id,
+        type: 'IN',
+        qty: additionalQty,
+        reason: 'تحديث مخزون يدوي',
+      },
+    });
+
+    return batch;
+  }
 }
+

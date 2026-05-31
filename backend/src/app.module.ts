@@ -7,10 +7,22 @@ import { ProductsModule } from './products/products.module';
 import { BatchesModule } from './batches/batches.module';
 import { CustomersModule } from './customers/customers.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
+import { SettingsModule } from './settings/settings.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
-  imports: [SalesModule, AuthModule, ProductsModule, BatchesModule, CustomersModule, SuppliersModule],
+  imports: [
+    SalesModule,
+    AuthModule,
+    ProductsModule,
+    BatchesModule,
+    CustomersModule,
+    SuppliersModule,
+    SettingsModule,
+    UsersModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
+

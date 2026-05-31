@@ -4,6 +4,8 @@ import { useAuthStore } from './store/useAuthStore';
 import { useInventoryStore } from './store/useInventoryStore';
 import { useSalesStore } from './store/useSalesStore';
 import { useSupplierStore } from './store/useSupplierStore';
+import { useSettingsStore } from './store/useSettingsStore';
+
 
 // Views
 import Dashboard from './views/Dashboard';
@@ -12,6 +14,8 @@ import Sales from './views/Sales';
 import Customers from './views/Customers';
 import Suppliers from './views/Suppliers';
 import Login from './views/Login';
+import SettingsView from './views/Settings';
+
 
 // Icons
 import { 
@@ -28,10 +32,11 @@ import {
   LogOut,
   UserCircle2,
   Menu,
-  X
+  X,
+  Settings
 } from 'lucide-react';
 
-type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
+type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'settings';
 
 export default function App() {
   const theme = useThemeStore((state) => state.theme);
@@ -67,6 +72,10 @@ export default function App() {
   const fetchPurchaseOrders = useSupplierStore((state) => state.fetchPurchaseOrders);
   const fetchPayments = useSupplierStore((state) => state.fetchPayments);
 
+  const loadSettings = useSettingsStore((state) => state.loadLocalCache);
+  const fetchSettings = useSettingsStore((state) => state.fetchSettings);
+  const fetchUsers = useSettingsStore((state) => state.fetchUsers);
+
   const roleLabels: Record<string, string> = {
     ADMIN: 'مدير النظام',
     SALES: 'فريق المبيعات',
@@ -79,6 +88,7 @@ export default function App() {
     if (!user) return;
     loadInventory();
     loadSuppliers();
+    loadSettings();
     
     // Fetch live data from backend
     fetchProducts();
@@ -87,7 +97,14 @@ export default function App() {
     fetchSuppliers();
     fetchPurchaseOrders();
     fetchPayments();
-  }, [user, loadInventory, loadSuppliers, fetchProducts, fetchBatches, fetchCustomers, fetchSuppliers, fetchPurchaseOrders, fetchPayments]);
+    fetchSettings();
+    
+    // ADMIN can fetch the list of managed users
+    if (user.role === 'ADMIN') {
+      fetchUsers();
+    }
+  }, [user, loadInventory, loadSuppliers, loadSettings, fetchProducts, fetchBatches, fetchCustomers, fetchSuppliers, fetchPurchaseOrders, fetchPayments, fetchSettings, fetchUsers]);
+
 
   // Hydrate with initial data if local storage cache is empty (Offline First bootstrap)
   useEffect(() => {
@@ -144,6 +161,7 @@ export default function App() {
     { id: 'sales', label: 'إصدار الفواتير', icon: Receipt },
     { id: 'customers', label: 'العملاء والشحن', icon: UsersRound },
     { id: 'suppliers', label: 'الموردين', icon: Building2 },
+    { id: 'settings', label: 'الإعدادات', icon: Settings },
   ];
 
   // Render active view
@@ -154,6 +172,7 @@ export default function App() {
       case 'sales': return <Sales />;
       case 'customers': return <Customers />;
       case 'suppliers': return <Suppliers />;
+      case 'settings': return <SettingsView />;
       default: return <Dashboard />;
     }
   };

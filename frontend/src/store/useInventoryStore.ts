@@ -38,6 +38,7 @@ interface InventoryState {
   fetchBatches: () => Promise<void>;
   addProduct: (prod: Omit<Product, 'id'>) => Promise<Product>;
   addBatch: (batch: Omit<Batch, 'id'>) => Promise<Batch>;
+  addBatchQty: (batchId: string, qty: number) => Promise<void>;
 }
 
 export const useInventoryStore = create<InventoryState>((set, get) => {
@@ -179,6 +180,16 @@ export const useInventoryStore = create<InventoryState>((set, get) => {
       }));
       get().saveLocalCache();
       return hydrated;
+    },
+
+    addBatchQty: async (batchId, qty) => {
+      await apiClient.post(`/batches/${batchId}/add-qty`, { qty });
+      set((state) => ({
+        batches: state.batches.map((b) =>
+          b.id === batchId ? { ...b, qty: b.qty + qty } : b
+        ),
+      }));
+      get().saveLocalCache();
     },
   };
 });

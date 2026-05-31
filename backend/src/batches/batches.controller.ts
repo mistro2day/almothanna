@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { BatchesService } from './batches.service';
 
 @Controller('batches')
@@ -24,4 +24,13 @@ export class BatchesController {
   ) {
     return this.batchesService.create(dto);
   }
+
+  @Post(':id/add-qty')
+  async addQty(
+    @Param('id') id: string,
+    @Body() dto: { qty: number },
+  ) {
+    return this.batchesService.addQty(id, dto.qty);
+  }
 }
+

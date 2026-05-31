@@ -227,4 +227,96 @@ export class SalesService {
       data: { createdAt: new Date(createdAt) },
     });
   }
+
+  async getDashboardStats() {
+    // Get all sales with items for calculation
+    const sales = await this.prisma.sale.findMany({
+      where: { status: { not: 'CANCELLED' } },
+      include: {
+        items: {
+          include: {
+            product: true,
+            batch: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Build monthly sales & profit grouped by month
+    const monthlyMap: Record<string, { sales: number; profit: number }> = {};
+    const monthNames = [
+      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+
+    for (const sale of sales) {
+      const d = new Date(sale.createdAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const label = monthNames[d.getMonth()];
+
+      if (!monthlyMap[key]) {
+        monthlyMap[key] = { sales: 0, profit: 0 };
+      }
+
+      monthlyMap[key].sales += sale.total;
+
+      // Calculate cost and profit per item
+      for (const item of sale.items) {
+        const costPrice = item.batch?.costPrice ?? 0;
+        const revenue = item.qty * item.price;
+        const cost = item.qty * costPrice;
+        monthlyMap[key].profit += (revenue - cost);
+      }
+
+      (monthlyMap[key] as any)._label = label;
+    }
+
+    const salesChart = Object.entries(monthlyMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6) // last 6 months
+      .map(([, v]) => ({
+        name: (v as any)._label,
+        sales: Math.round(v.sales),
+        profit: Math.round(v.profit),
+      }));
+
+    // Top products by quantity sold
+    const productSales: Record<string, { name: string; qty: number; revenue: number }> = {};
+
+    for (const sale of sales) {
+      for (const item of sale.items) {
+        const pid = item.productId;
+        if (!productSales[pid]) {
+          productSales[pid] = { name: item.product?.name || 'Unknown', qty: 0, revenue: 0 };
+        }
+        productSales[pid].qty += item.qty;
+        productSales[pid].revenue += item.qty * item.price;
+      }
+    }
+
+    const topProducts = Object.entries(productSales)
+      .sort(([, a], [, b]) => b.qty - a.qty)
+      .slice(0, 6)
+      .map(([, v], i) => ({
+        name: v.name,
+        qty: v.qty,
+        revenue: Math.round(v.revenue),
+        color: ['#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6'][i],
+      }));
+
+    // Total stats
+    const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
+    const totalCost = sales.reduce((sum, s) => {
+      return sum + s.items.reduce((c, item) => c + item.qty * (item.batch?.costPrice ?? 0), 0);
+    }, 0);
+    const totalProfit = totalRevenue - totalCost;
+
+    return {
+      salesChart,
+      topProducts,
+      totalRevenue: Math.round(totalRevenue),
+      totalProfit: Math.round(totalProfit),
+    };
+  }
 }

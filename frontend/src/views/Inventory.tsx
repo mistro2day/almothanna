@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useInventoryStore, Product, Batch } from '../store/useInventoryStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { 
   Search, 
   Plus, 
@@ -8,7 +9,8 @@ import {
   DollarSign, 
   Tag,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import DatePicker from '../components/DatePicker';
 
@@ -19,9 +21,16 @@ const generateBatchNumber = () => {
 };
 
 export default function Inventory() {
-  const { products, batches, addProduct, addBatch } = useInventoryStore();
+  const { products, batches, addProduct, addBatch, addBatchQty } = useInventoryStore();
+  const { user } = useAuthStore();
   const [search, setSearch] = useState('');
   
+  // Detail Modals State
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
+  const [additionalQty, setAdditionalQty] = useState<number>(0);
+  const [addingQtyLoading, setAddingQtyLoading] = useState(false);
+
   // Modals visibility
   const [showProductModal, setShowProductModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -86,6 +95,23 @@ export default function Inventory() {
     }
   };
 
+  const handleAddQtySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBatch || additionalQty <= 0) return;
+    setAddingQtyLoading(true);
+    try {
+      await addBatchQty(selectedBatch.id, additionalQty);
+      alert('تم إضافة الكمية للتشغيلة بنجاح');
+      setAdditionalQty(0);
+      setSelectedBatch(null);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في إضافة الكمية للتشغيلة');
+    } finally {
+      setAddingQtyLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-20 lg:pb-0" dir="rtl">
       <div className="space-y-6 animate-fade-in-slide">
@@ -142,7 +168,7 @@ export default function Inventory() {
         
         <div className="flex items-center gap-2 bg-[var(--border-color)]/30 backdrop-blur-md px-4 py-2 rounded-2xl border border-[var(--glass-border)] text-xs text-[var(--text-secondary)] self-end md:self-auto shrink-0 relative z-10">
           <Calendar className="w-4 h-4 text-teal-500" />
-          <span>تاريخ محاكاة النظام: <strong>31 مايو 2026</strong></span>
+          <span>تاريخ اليوم: <strong>{new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
         </div>
       </div>
 
@@ -174,7 +200,11 @@ export default function Inventory() {
                 const totalQty = productBatches.reduce((sum, b) => sum + b.qty, 0);
 
                 return (
-                  <div key={p.id} className="glass-card p-5 rounded-2xl space-y-4 border border-[var(--glass-border)] flex flex-col justify-between hover:border-teal-500/25 transition-all">
+                  <div 
+                    key={p.id} 
+                    onClick={() => setSelectedProduct(p)}
+                    className="glass-card p-5 rounded-2xl space-y-4 border border-[var(--glass-border)] flex flex-col justify-between hover:border-teal-500/25 transition-all cursor-pointer"
+                  >
                     <div>
                       <div className="flex justify-between items-start gap-2">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500">
@@ -218,7 +248,7 @@ export default function Inventory() {
                 const getFefoStatus = (batch: Batch) => {
                   if (batch.qty <= 0) return { label: 'نفذت الكمية ⚪', colorClass: 'bg-gray-500/10 text-gray-500 border-gray-500/20' };
                   
-                  const today = new Date('2026-05-31');
+                  const today = new Date(); today.setHours(0,0,0,0);
                   const expiry = new Date(batch.expiryDate);
                   const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
 
@@ -245,13 +275,17 @@ export default function Inventory() {
                   const prod = products.find(p => p.id === b.productId);
                   const status = getFefoStatus(b);
                   
-                  const today = new Date('2026-05-31');
+                  const today = new Date(); today.setHours(0,0,0,0);
                   const expiry = new Date(b.expiryDate);
                   const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
                   const isNearOrExpired = daysLeft <= 180;
 
                   return (
-                    <div key={b.id} className="glass-card p-4 rounded-xl space-y-2 border border-[var(--glass-border)] relative overflow-hidden hover:border-teal-500/25 transition-all">
+                    <div 
+                      key={b.id} 
+                      onClick={() => setSelectedBatch(b)}
+                      className="glass-card p-4 rounded-xl space-y-2 border border-[var(--glass-border)] relative overflow-hidden hover:border-teal-500/25 transition-all cursor-pointer"
+                    >
                       {isNearOrExpired && (
                         <div className={`absolute top-0 left-0 w-1.5 h-full ${daysLeft <= 0 ? 'bg-rose-500' : 'bg-amber-500'}`} />
                       )}
@@ -489,6 +523,139 @@ export default function Inventory() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Selected Product Details */}
+      {selectedProduct && (
+        <div className="modal-overlay" onClick={() => setSelectedProduct(null)}>
+          <div className="modal-content-card max-w-2xl text-right animate-fade-in" onClick={(e) => e.stopPropagation()} dir="rtl">
+            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-[var(--text-primary)]">{selectedProduct.name}</h3>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 mt-1 inline-block">
+                  {selectedProduct.category || 'عام'}
+                </span>
+              </div>
+              <button onClick={() => setSelectedProduct(null)} className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-6 text-sm text-[var(--text-secondary)]">
+              <div>الاسم العلمي: <strong className="text-[var(--text-primary)]">{selectedProduct.scientificName || '---'}</strong></div>
+              <div>الباركود: <strong className="text-[var(--text-primary)] font-mono">{selectedProduct.barcode || '---'}</strong></div>
+              <div>الوحدة: <strong className="text-[var(--text-primary)]">{selectedProduct.unit}</strong></div>
+              <div>إجمالي الكمية المتوفرة: <strong className="text-emerald-500 font-bold">{batches.filter(b => b.productId === selectedProduct.id).reduce((sum, b) => sum + b.qty, 0)} قطعة</strong></div>
+            </div>
+
+            <h4 className="text-sm font-bold text-[var(--text-primary)] mb-3">التشغيلات المتاحة لهذا الدواء (مرتبة بنظام FEFO):</h4>
+            {batches.filter(b => b.productId === selectedProduct.id).length === 0 ? (
+              <div className="text-center py-6 border border-dashed border-[var(--border-color)] rounded-2xl text-[var(--text-secondary)] text-xs">لا توجد تشغيلات مسجلة لهذا المنتج بعد.</div>
+            ) : (
+              <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-[var(--bg-primary)] border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                      <th className="p-3">رقم التشغيلة</th>
+                      <th className="p-3 text-center">الكمية</th>
+                      <th className="p-3 text-center">سعر التكلفة</th>
+                      <th className="p-3 text-center">تاريخ الإنتاج</th>
+                      <th className="p-3 text-left">تاريخ الانتهاء</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-color)]">
+                    {[...batches]
+                      .filter(b => b.productId === selectedProduct.id)
+                      .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate))
+                      .map((b) => (
+                        <tr key={b.id} className="text-[var(--text-primary)]">
+                          <td className="p-3 font-mono font-bold">{b.batchNumber}</td>
+                          <td className="p-3 text-center font-bold font-mono">{b.qty}</td>
+                          <td className="p-3 text-center font-mono">{b.costPrice} SDG</td>
+                          <td className="p-3 text-center font-mono text-[var(--text-secondary)]">{new Date(b.manufactureDate).toLocaleDateString('en-US')}</td>
+                          <td className="p-3 text-left font-mono text-[var(--text-secondary)]">{new Date(b.expiryDate).toLocaleDateString('en-US')}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal 4: Selected Batch Details & Add Qty */}
+      {selectedBatch && (
+        <div className="modal-overlay" onClick={() => { setSelectedBatch(null); setAdditionalQty(0); }}>
+          <div className="modal-content-card max-w-md text-right animate-fade-in" onClick={(e) => e.stopPropagation()} dir="rtl">
+            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-[var(--text-primary)]">تشغيلة: {selectedBatch.batchNumber}</h3>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">المنتج: <strong className="text-[var(--text-primary)]">{products.find(p => p.id === selectedBatch.productId)?.name || 'غير معروف'}</strong></p>
+              </div>
+              <button onClick={() => { setSelectedBatch(null); setAdditionalQty(0); }} className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm text-[var(--text-secondary)] mb-6">
+              <div className="flex justify-between"><span>الكمية المتوفرة حالياً:</span><strong className="text-[var(--text-primary)] font-bold font-mono text-base">{selectedBatch.qty} قطعة</strong></div>
+              <div className="flex justify-between"><span>سعر التكلفة:</span><strong className="text-[var(--text-primary)] font-mono">{selectedBatch.costPrice} SDG</strong></div>
+              <div className="flex justify-between"><span>تاريخ الإنتاج:</span><strong className="text-[var(--text-primary)] font-mono">{new Date(selectedBatch.manufactureDate).toLocaleDateString('ar-SA')}</strong></div>
+              <div className="flex justify-between"><span>تاريخ الانتهاء:</span><strong className="text-[var(--text-primary)] font-mono">{new Date(selectedBatch.expiryDate).toLocaleDateString('ar-SA')}</strong></div>
+              {(() => {
+                const today = new Date(); today.setHours(0,0,0,0);
+                const expiry = new Date(selectedBatch.expiryDate);
+                const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
+                return (
+                  <div className="flex justify-between border-t border-[var(--border-color)] pt-2.5">
+                    <span>حالة الصلاحية:</span>
+                    <strong className={daysLeft <= 0 ? 'text-rose-500 font-bold' : daysLeft <= 180 ? 'text-amber-500 font-bold' : 'text-emerald-500 font-bold'}>
+                      {daysLeft <= 0 ? 'منتهي الصلاحية ❌' : `متبقي ${daysLeft} يوم`}
+                    </strong>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Add Qty Form (Only visible to ADMIN & WAREHOUSE roles) */}
+            {(user?.role === 'ADMIN' || user?.role === 'WAREHOUSE') ? (
+              <div className="border-t border-[var(--border-color)] pt-5 space-y-3">
+                <h4 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-1.5">
+                  <Plus className="w-4 h-4 text-teal-500" />
+                  <span>توريد كميات إضافية لنفس التشغيلة</span>
+                </h4>
+                <p className="text-[11px] text-[var(--text-secondary)]">بصفتك مشرف مخزون أو مدير نظام، يمكنك تسجيل استلام كمية إضافية لهذا الـ Batch مباشرة، وسيقوم النظام تلقائياً بتوليد حركة مخزنية "داخل" (Stock Movement IN).</p>
+                <form onSubmit={handleAddQtySubmit} className="flex gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={additionalQty || ''}
+                    onChange={(e) => setAdditionalQty(Number(e.target.value))}
+                    placeholder="الكمية الإضافية"
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={additionalQty <= 0 || addingQtyLoading}
+                    className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    {addingQtyLoading ? (
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <span>تأكيد الإضافة</span>
+                    )}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div className="border-t border-[var(--border-color)] pt-4 p-3 bg-amber-500/5 rounded-xl border border-amber-500/10 text-[11px] text-amber-600 text-center">
+                إضافة كمية لهذه التشغيلة يتطلب صلاحية مشرف المخزون أو مدير النظام.
+              </div>
+            )}
           </div>
         </div>
       )}
