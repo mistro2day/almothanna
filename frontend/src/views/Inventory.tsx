@@ -118,6 +118,34 @@ export default function Inventory() {
         </div>
       </div>
 
+      {/* FEFO Explanation Glassmorphic Banner */}
+      <div className="glass-card p-5 sm:p-6 rounded-3xl border border-teal-500/20 bg-gradient-to-r from-teal-500/5 via-emerald-500/5 to-transparent relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="absolute -right-16 -top-16 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl" />
+        <div className="absolute -left-16 -bottom-16 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl" />
+        
+        <div className="flex items-start gap-4 relative z-10">
+          <div className="p-3 bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-2xl shadow-lg shadow-teal-500/20">
+            <Layers className="w-6 h-6 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base sm:text-lg font-bold text-[var(--text-primary)] flex flex-wrap items-center gap-2">
+              <span>نظام إدارة المخزون الذكي (FEFO)</span>
+              <span className="text-xs bg-teal-500/20 text-teal-600 dark:text-teal-400 font-bold px-2.5 py-0.5 rounded-full">
+                ما تنتهي صلاحيته أولاً، يُصرف أولاً
+              </span>
+            </h2>
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed max-w-2xl">
+              يقوم النظام تلقائياً بتحليل صلاحيات التشغيلات النشطة وترتيبها. يتم منح الأولوية القصوى للصرف للتشغيلات ذات الصلاحية الأقرب للانتهاء لتجنب تلف الأدوية، مع ترميز لوني ذكي لتنبيه الصيادلة ومسؤولي المستودع.
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2 bg-[var(--border-color)]/30 backdrop-blur-md px-4 py-2 rounded-2xl border border-[var(--glass-border)] text-xs text-[var(--text-secondary)] self-end md:self-auto shrink-0 relative z-10">
+          <Calendar className="w-4 h-4 text-teal-500" />
+          <span>تاريخ محاكاة النظام: <strong>31 مايو 2026</strong></span>
+        </div>
+      </div>
+
       {/* Search Bar */}
       <div className="glass-card flex items-center gap-3 px-4 py-3 rounded-2xl">
         <Search className="w-5 h-5 text-[var(--text-secondary)]" />
@@ -146,7 +174,7 @@ export default function Inventory() {
                 const totalQty = productBatches.reduce((sum, b) => sum + b.qty, 0);
 
                 return (
-                  <div key={p.id} className="glass-card p-5 rounded-2xl space-y-4 border border-[var(--glass-border)] flex flex-col justify-between">
+                  <div key={p.id} className="glass-card p-5 rounded-2xl space-y-4 border border-[var(--glass-border)] flex flex-col justify-between hover:border-teal-500/25 transition-all">
                     <div>
                       <div className="flex justify-between items-start gap-2">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500">
@@ -182,34 +210,86 @@ export default function Inventory() {
             </div>
           ) : (
             <div className="space-y-3">
-              {batches.map((b) => {
-                const prod = products.find(p => p.id === b.productId);
-                const daysLeft = Math.ceil((new Date(b.expiryDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                const isNearExpiry = daysLeft <= 180;
+              {(() => {
+                // FEFO: Sort batches by expiryDate ascending
+                const sortedBatches = [...batches].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 
-                return (
-                  <div key={b.id} className="glass-card p-4 rounded-xl space-y-2 border border-[var(--glass-border)] relative overflow-hidden">
-                    {isNearExpiry && (
-                      <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-500" />
-                    )}
-                    <div className="flex justify-between items-start">
-                      <span className="text-sm font-bold text-[var(--text-primary)]">{prod?.name || 'منتج غير معروف'}</span>
-                      <span className="text-xs font-mono px-2 py-0.5 rounded bg-[var(--border-color)] text-[var(--text-secondary)]">
-                        {b.batchNumber}
-                      </span>
-                    </div>
+                // Helper to check FEFO Priority for each product
+                const getFefoStatus = (batch: Batch) => {
+                  if (batch.qty <= 0) return { label: 'نفذت الكمية ⚪', colorClass: 'bg-gray-500/10 text-gray-500 border-gray-500/20' };
+                  
+                  const today = new Date('2026-05-31');
+                  const expiry = new Date(batch.expiryDate);
+                  const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
 
-                    <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-secondary)] pt-1">
-                      <div>الكمية: <strong className="text-[var(--text-primary)]">{b.qty}</strong></div>
-                      <div>سعر التكلفة: <strong className="text-[var(--text-primary)]">{b.costPrice} SDG</strong></div>
-                      <div className="col-span-2 flex items-center gap-1 mt-1">
-                        <Calendar className="w-3.5 h-3.5 text-teal-500" />
-                        <span>الانتهاء: <strong>{new Date(b.expiryDate).toLocaleDateString('en-US')}</strong></span>
+                  const isExpired = daysLeft <= 0;
+                  const isNearExpiry = daysLeft > 0 && daysLeft <= 180;
+
+                  // Find active batches for this product
+                  const activeProductBatches = sortedBatches.filter(b => b.productId === batch.productId && b.qty > 0);
+                  const isTopPriority = activeProductBatches.length > 0 && activeProductBatches[0].id === batch.id;
+
+                  if (isExpired) {
+                    return { label: 'منتهي الصلاحية ❌', colorClass: 'bg-rose-500/10 text-rose-500 border-rose-500/20 animate-pulse font-bold' };
+                  }
+                  if (isTopPriority) {
+                    return { label: 'أولوية الصرف (FEFO) ⭐', colorClass: 'bg-amber-500/20 text-amber-500 border-amber-500/30 font-bold shadow-sm shadow-amber-500/10' };
+                  }
+                  if (isNearExpiry) {
+                    return { label: 'قريب الانتهاء ⚠️', colorClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' };
+                  }
+                  return { label: 'صلاحية آمنة ✅', colorClass: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' };
+                };
+
+                return sortedBatches.map((b) => {
+                  const prod = products.find(p => p.id === b.productId);
+                  const status = getFefoStatus(b);
+                  
+                  const today = new Date('2026-05-31');
+                  const expiry = new Date(b.expiryDate);
+                  const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
+                  const isNearOrExpired = daysLeft <= 180;
+
+                  return (
+                    <div key={b.id} className="glass-card p-4 rounded-xl space-y-2 border border-[var(--glass-border)] relative overflow-hidden hover:border-teal-500/25 transition-all">
+                      {isNearOrExpired && (
+                        <div className={`absolute top-0 left-0 w-1.5 h-full ${daysLeft <= 0 ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                      )}
+                      
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-sm font-bold text-[var(--text-primary)]">{prod?.name || 'منتج غير معروف'}</span>
+                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-[var(--border-color)] text-[var(--text-secondary)] shrink-0">
+                          {b.batchNumber}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${status.colorClass}`}>
+                          {status.label}
+                        </span>
+                        {daysLeft > 0 ? (
+                          <span className="text-[10px] text-[var(--text-secondary)]">
+                            متبقي: <strong className="text-[var(--text-primary)]">{daysLeft} يوم</strong>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-rose-500 font-bold">
+                            تالف / منتهي
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-secondary)] pt-2 border-t border-[var(--border-color)]">
+                        <div>الكمية: <strong className="text-[var(--text-primary)]">{b.qty}</strong></div>
+                        <div>سعر التكلفة: <strong className="text-[var(--text-primary)]">{b.costPrice} SDG</strong></div>
+                        <div className="col-span-2 flex items-center gap-1 mt-1">
+                          <Calendar className="w-3.5 h-3.5 text-teal-500" />
+                          <span>الانتهاء: <strong>{new Date(b.expiryDate).toLocaleDateString('en-US')}</strong></span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           )}
         </div>

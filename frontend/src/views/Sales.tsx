@@ -44,10 +44,65 @@ type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
 
 export default function Sales() {
   const { products, batches, getFEFOBatches, decrementBatchQty } = useInventoryStore();
-  const { customers, cart, addToCart, removeFromCart, updateCartQty, clearCart } = useSalesStore();
+  const { customers, cart, addToCart, removeFromCart, updateCartQty, clearCart, addCustomer } = useSalesStore();
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [showQuickAddCustomer, setShowQuickAddCustomer] = useState(false);
+  const [quickCust, setQuickCust] = useState({
+    name: '',
+    type: 'Pharmacy',
+    state: 'الخرطوم',
+    phone: '',
+    creditLimit: 500000
+  });
+
+  const sudanStates = [
+    'الخرطوم',
+    'الجزيرة',
+    'البحر الأحمر',
+    'نهر النيل',
+    'شمال كردفان',
+    'الشمالية',
+    'كسلا',
+    'القضارف',
+    'النيل الأبيض'
+  ];
+
+  const filteredCustomersForSelect = customers.filter(c => 
+    c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+    c.state.toLowerCase().includes(customerSearch.toLowerCase())
+  );
+
+  const handleQuickAddCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickCust.name || !quickCust.phone) return;
+
+    try {
+      const created = await addCustomer({
+        name: quickCust.name,
+        type: quickCust.type,
+        state: quickCust.state,
+        phone: quickCust.phone,
+        creditLimit: Number(quickCust.creditLimit)
+      });
+      setSelectedCustomerId(created.id);
+      setQuickCust({ name: '', type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
+      setShowQuickAddCustomer(false);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في إضافة العميل');
+    }
+  };
+
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
+
+  const filteredProductsForSelect = products.filter(p =>
+    p.name.toLowerCase().includes(productSearch.toLowerCase())
+  );
   
   const [fefoBatches, setFefoBatches] = useState<Batch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
@@ -791,10 +846,78 @@ export default function Sales() {
                 <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-4">
                   <UserCheck className="w-5 h-5" /> بيانات العميل
                 </div>
-                <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11">
-                  <option value="">اختر العميل للفاتورة</option>
-                  {customers.map((c: Customer) => (<option key={c.id} value={c.id}>{c.name} - {c.state}</option>))}
-                </select>
+                <div className="relative w-full">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={isCustomerDropdownOpen ? customerSearch : (selectedCustomer ? `${selectedCustomer.name} - ${selectedCustomer.state}` : '')}
+                        placeholder="ابحث عن العميل أو اختر..."
+                        onFocus={() => {
+                          setCustomerSearch('');
+                          setIsCustomerDropdownOpen(true);
+                        }}
+                        onChange={(e) => {
+                          setCustomerSearch(e.target.value);
+                          setIsCustomerDropdownOpen(true);
+                        }}
+                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none pr-10 text-right text-sm focus:border-emerald-500/50 h-11"
+                      />
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[var(--text-secondary)]">
+                        <Search className="w-4 h-4" />
+                      </div>
+                      {isCustomerDropdownOpen && (
+                        <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
+                          {filteredCustomersForSelect.length === 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuickCust({ name: customerSearch, type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
+                                setShowQuickAddCustomer(true);
+                                setIsCustomerDropdownOpen(false);
+                              }}
+                              className="w-full text-right px-4 py-3 hover:bg-[var(--border-color)]/30 text-emerald-500 font-semibold text-xs border-b border-[var(--border-color)]/50 transition-colors flex items-center gap-2"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>إضافة عميل جديد باسم "{customerSearch}"</span>
+                            </button>
+                          ) : (
+                            filteredCustomersForSelect.map((c: Customer) => (
+                              <button
+                                type="button"
+                                key={c.id}
+                                onClick={() => {
+                                  setSelectedCustomerId(c.id);
+                                  setIsCustomerDropdownOpen(false);
+                                }}
+                                className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-sm transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                              >
+                                {c.name} - {c.state} ({c.type === 'Pharmacy' ? 'صيدلية' : c.type === 'Hospital' ? 'مستشفى' : 'موزع'})
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickCust({ name: customerSearch, type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
+                        setShowQuickAddCustomer(true);
+                      }}
+                      className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl flex items-center justify-center transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer h-11"
+                      title="إضافة عميل جديد"
+                    >
+                      <Plus className="w-5 h-5" />
+                    </button>
+                  </div>
+                  {isCustomerDropdownOpen && (
+                    <div 
+                      className="fixed inset-0 z-40 bg-transparent" 
+                      onClick={() => setIsCustomerDropdownOpen(false)} 
+                    />
+                  )}
+                </div>
                 {selectedCustomer && (
                   <div className="mt-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
                     <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
@@ -809,13 +932,61 @@ export default function Sales() {
                   <ShoppingCart className="w-5 h-5" /> إضافة أصناف الفاتورة
                 </div>
                 <form onSubmit={handleAddToCart} className="space-y-4">
-                  <select value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11">
-                    <option value="">اختر المنتج</option>
-                    {products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                  </select>
+                  <div className="relative w-full">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={isProductDropdownOpen ? productSearch : (products.find(p => p.id === selectedProductId)?.name || '')}
+                        placeholder="ابحث عن المنتج..."
+                        onFocus={() => {
+                          setProductSearch('');
+                          setIsProductDropdownOpen(true);
+                        }}
+                        onChange={(e) => {
+                          setProductSearch(e.target.value);
+                          setIsProductDropdownOpen(true);
+                        }}
+                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none pr-10 text-right text-sm focus:border-emerald-500/50 h-11"
+                      />
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[var(--text-secondary)]">
+                        <Search className="w-4 h-4" />
+                      </div>
+                      {isProductDropdownOpen && (
+                        <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
+                          {filteredProductsForSelect.length === 0 ? (
+                            <div className="text-center py-3 text-xs text-[var(--text-secondary)]">لا توجد منتجات تطابق البحث</div>
+                          ) : (
+                            filteredProductsForSelect.map((p) => (
+                              <button
+                                type="button"
+                                key={p.id}
+                                onClick={() => {
+                                  setSelectedProductId(p.id);
+                                  setIsProductDropdownOpen(false);
+                                }}
+                                className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-sm transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                              >
+                                {p.name}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {isProductDropdownOpen && (
+                      <div 
+                        className="fixed inset-0 z-40 bg-transparent" 
+                        onClick={() => setIsProductDropdownOpen(false)} 
+                      />
+                    )}
+                  </div>
                   <select value={selectedBatchId} onChange={(e) => { setSelectedBatchId(e.target.value); const sb = batches.find(b => b.id === e.target.value); if (sb) setPrice(Math.round(sb.costPrice * 1.25)); }} disabled={fefoBatches.length === 0} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50 h-11">
                     <option value="">اختر التشغيلة</option>
-                    {fefoBatches.map((b: Batch) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
+                    {fefoBatches.map((b: Batch, index: number) => (
+                      <option key={b.id} value={b.id}>
+                        {b.batchNumber} (المتاح: {b.qty}) {index === 0 ? ' 👈 [موصى بصرفه أولاً - FEFO ⭐]' : ''}
+                      </option>
+                    ))}
                   </select>
                   <div className="grid grid-cols-2 gap-3">
                     <input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} placeholder="الكمية" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
@@ -883,10 +1054,78 @@ export default function Sales() {
               <div className="space-y-6">
                 <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/20">
                   <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><UserCheck className="w-5 h-5" /> بيانات العميل</div>
-                  <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none">
-                    <option value="">اختر العميل للفاتورة</option>
-                    {customers.map((c: Customer) => (<option key={c.id} value={c.id}>{c.name} - {c.state}</option>))}
-                  </select>
+                  <div className="relative w-full">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={isCustomerDropdownOpen ? customerSearch : (selectedCustomer ? `${selectedCustomer.name} - ${selectedCustomer.state}` : '')}
+                          placeholder="ابحث عن العميل أو اختر من القائمة..."
+                          onFocus={() => {
+                            setCustomerSearch('');
+                            setIsCustomerDropdownOpen(true);
+                          }}
+                          onChange={(e) => {
+                            setCustomerSearch(e.target.value);
+                            setIsCustomerDropdownOpen(true);
+                          }}
+                          className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none pr-10 text-right text-sm focus:border-emerald-500/50"
+                        />
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[var(--text-secondary)]">
+                          <Search className="w-4 h-4" />
+                        </div>
+                        {isCustomerDropdownOpen && (
+                          <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
+                            {filteredCustomersForSelect.length === 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQuickCust({ name: customerSearch, type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
+                                  setShowQuickAddCustomer(true);
+                                  setIsCustomerDropdownOpen(false);
+                                }}
+                                className="w-full text-right px-4 py-3 hover:bg-[var(--border-color)]/30 text-emerald-500 font-semibold text-xs border-b border-[var(--border-color)]/50 transition-colors flex items-center gap-2"
+                              >
+                                <Plus className="w-4 h-4" />
+                                <span>إضافة عميل جديد باسم "{customerSearch}"</span>
+                              </button>
+                            ) : (
+                              filteredCustomersForSelect.map((c: Customer) => (
+                                <button
+                                  type="button"
+                                  key={c.id}
+                                  onClick={() => {
+                                    setSelectedCustomerId(c.id);
+                                    setIsCustomerDropdownOpen(false);
+                                  }}
+                                  className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-sm transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                                >
+                                  {c.name} - {c.state} ({c.type === 'Pharmacy' ? 'صيدلية' : c.type === 'Hospital' ? 'مستشفى' : 'موزع'})
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickCust({ name: customerSearch, type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
+                          setShowQuickAddCustomer(true);
+                        }}
+                        className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl flex items-center justify-center transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer"
+                        title="إضافة عميل جديد"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                    {isCustomerDropdownOpen && (
+                      <div 
+                        className="fixed inset-0 z-40 bg-transparent" 
+                        onClick={() => setIsCustomerDropdownOpen(false)} 
+                      />
+                    )}
+                  </div>
                   {selectedCustomer && (
                     <div className="mt-4 rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
                       <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
@@ -899,18 +1138,66 @@ export default function Sales() {
                 <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
                   <div className="flex items-center gap-3 text-sm font-semibold text-[var(--text-secondary)] mb-5"><ShoppingCart className="w-5 h-5" /> إضافة أصناف الفاتورة</div>
                   <form onSubmit={handleAddToCart} className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
-                    <div className="lg:col-span-2 space-y-1">
+                    <div className="lg:col-span-2 space-y-1 relative">
                       <label className="block text-xs text-[var(--text-secondary)]">المنتج</label>
-                      <select value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none">
-                        <option value="">اختر المنتج</option>
-                        {products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                      </select>
+                      <div className="relative w-full">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={isProductDropdownOpen ? productSearch : (products.find(p => p.id === selectedProductId)?.name || '')}
+                            placeholder="ابحث عن المنتج..."
+                            onFocus={() => {
+                              setProductSearch('');
+                              setIsProductDropdownOpen(true);
+                            }}
+                            onChange={(e) => {
+                              setProductSearch(e.target.value);
+                              setIsProductDropdownOpen(true);
+                            }}
+                            className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none pr-10 text-right text-sm focus:border-emerald-500/50"
+                          />
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[var(--text-secondary)]">
+                            <Search className="w-4 h-4" />
+                          </div>
+                          {isProductDropdownOpen && (
+                            <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
+                              {filteredProductsForSelect.length === 0 ? (
+                                <div className="text-center py-3 text-xs text-[var(--text-secondary)]">لا توجد منتجات تطابق البحث</div>
+                              ) : (
+                                filteredProductsForSelect.map((p) => (
+                                  <button
+                                    type="button"
+                                    key={p.id}
+                                    onClick={() => {
+                                      setSelectedProductId(p.id);
+                                      setIsProductDropdownOpen(false);
+                                    }}
+                                    className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-sm transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                                  >
+                                    {p.name}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {isProductDropdownOpen && (
+                          <div 
+                            className="fixed inset-0 z-40 bg-transparent" 
+                            onClick={() => setIsProductDropdownOpen(false)} 
+                          />
+                        )}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs text-[var(--text-secondary)]">التشغيليلة</label>
                       <select value={selectedBatchId} onChange={(e) => { setSelectedBatchId(e.target.value); const sb = batches.find(b => b.id === e.target.value); if (sb) setPrice(Math.round(sb.costPrice * 1.25)); }} disabled={fefoBatches.length === 0} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none disabled:opacity-50">
                         <option value="">اختر التشغيلة</option>
-                        {fefoBatches.map((b: Batch) => (<option key={b.id} value={b.id}>{b.batchNumber} (المتاح: {b.qty})</option>))}
+                        {fefoBatches.map((b: Batch, index: number) => (
+                          <option key={b.id} value={b.id}>
+                            {b.batchNumber} (المتاح: {b.qty}) {index === 0 ? ' 👈 [موصى بصرفه أولاً - FEFO ⭐]' : ''}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -1220,6 +1507,99 @@ export default function Sales() {
                 <span className="font-bold text-rose-500">{Math.max(0, selectedInvoice.total - selectedInvoice.paid).toLocaleString('en-US')} SDG</span>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Customer Modal */}
+      {showQuickAddCustomer && (
+        <div className="modal-overlay z-[9999]" onClick={() => setShowQuickAddCustomer(false)}>
+          <div className="modal-content-card max-w-md animate-fade-in" onClick={(e) => e.stopPropagation()} dir="rtl">
+            <h3 className="text-xl font-bold text-[var(--text-primary)] mb-4">إضافة عميل معتمد جديد</h3>
+            
+            <form onSubmit={handleQuickAddCustomer} className="space-y-3 text-sm">
+              <div className="space-y-1">
+                <label className="block text-[var(--text-secondary)] font-medium">اسم الجهة (الصيدلية / المستشفى)</label>
+                <input 
+                  type="text" 
+                  required
+                  value={quickCust.name}
+                  onChange={(e) => setQuickCust({ ...quickCust, name: e.target.value })}
+                  placeholder="اسم الصيدلية أو الموزع"
+                  className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">نوع العميل</label>
+                  <select 
+                    value={quickCust.type}
+                    onChange={(e) => setQuickCust({ ...quickCust, type: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none"
+                  >
+                    <option value="Pharmacy">صيدلية (Pharmacy)</option>
+                    <option value="Hospital">مستشفى (Hospital)</option>
+                    <option value="Distributor">موزع الجملة (Distributor)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">الولاية الجغرافية</label>
+                  <select 
+                    value={quickCust.state}
+                    onChange={(e) => setQuickCust({ ...quickCust, state: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none"
+                  >
+                    {sudanStates.map((s, idx) => (
+                      <option key={idx} value={s}>ولاية {s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">رقم الهاتف</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={quickCust.phone}
+                    onChange={(e) => setQuickCust({ ...quickCust, phone: e.target.value })}
+                    placeholder="رقم الموبايل"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">سقف الائتمان (SDG)</label>
+                  <input 
+                    type="number" 
+                    required
+                    min={0}
+                    value={quickCust.creditLimit}
+                    onChange={(e) => setQuickCust({ ...quickCust, creditLimit: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-start gap-3 pt-3">
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium cursor-pointer"
+                >
+                  إضافة العميل
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowQuickAddCustomer(false)}
+                  className="px-4 py-2 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl font-medium cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
