@@ -149,42 +149,43 @@ export default function Suppliers() {
     : [];
 
   // Handlers
-  const handleAddSupplier = (e: React.FormEvent) => {
+  const handleAddSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSupplier.name || !newSupplier.phone) return;
 
-    const supplier: Supplier = {
-      id: crypto.randomUUID(),
-      name: newSupplier.name,
-      companyName: newSupplier.companyName || undefined,
-      type: newSupplier.type,
-      phone: newSupplier.phone,
-      email: newSupplier.email || undefined,
-      country: newSupplier.country,
-      city: newSupplier.city || undefined,
-      address: newSupplier.address || undefined,
-      commercialReg: newSupplier.commercialReg || undefined,
-      contactPerson: newSupplier.contactPerson || undefined,
-      contactPhone: newSupplier.contactPhone || undefined,
-      creditLimit: Number(newSupplier.creditLimit),
-      paymentTerms: newSupplier.paymentTerms,
-      currency: newSupplier.currency,
-      notes: newSupplier.notes || undefined,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
-
-    addSupplier(supplier);
-    setNewSupplier({
-      name: '', companyName: '', type: 'pharma_company', phone: '', email: '',
-      country: 'السودان', city: '', address: '', commercialReg: '',
-      contactPerson: '', contactPhone: '', creditLimit: 0,
-      paymentTerms: 'CASH_ON_DELIVERY', currency: 'SDG', notes: '',
-    });
-    setShowAddModal(false);
+    try {
+      await addSupplier({
+        name: newSupplier.name,
+        companyName: newSupplier.companyName || undefined,
+        type: newSupplier.type,
+        phone: newSupplier.phone,
+        email: newSupplier.email || undefined,
+        country: newSupplier.country,
+        city: newSupplier.city || undefined,
+        address: newSupplier.address || undefined,
+        commercialReg: newSupplier.commercialReg || undefined,
+        contactPerson: newSupplier.contactPerson || undefined,
+        contactPhone: newSupplier.contactPhone || undefined,
+        creditLimit: Number(newSupplier.creditLimit),
+        paymentTerms: newSupplier.paymentTerms,
+        currency: newSupplier.currency,
+        notes: newSupplier.notes || undefined,
+        isActive: true,
+      });
+      setNewSupplier({
+        name: '', companyName: '', type: 'pharma_company', phone: '', email: '',
+        country: 'السودان', city: '', address: '', commercialReg: '',
+        contactPerson: '', contactPhone: '', creditLimit: 0,
+        paymentTerms: 'CASH_ON_DELIVERY', currency: 'SDG', notes: '',
+      });
+      setShowAddModal(false);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في إضافة المورد');
+    }
   };
 
-  const handleAddPO = (e: React.FormEvent) => {
+  const handleAddPO = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showDetailView || newPO.items.length === 0) return;
 
@@ -193,48 +194,45 @@ export default function Suppliers() {
 
     const total = validItems.reduce((sum, i) => sum + i.qty * i.unitCost, 0);
 
-    const order: PurchaseOrder = {
-      id: crypto.randomUUID(),
-      orderNumber: `PO-${Date.now().toString().slice(-6)}`,
-      supplierId: showDetailView,
-      supplierName: detailSupplier?.name || '',
-      total,
-      paid: 0,
-      status: 'CONFIRMED',
-      items: validItems.map((i) => ({
-        id: crypto.randomUUID(),
-        productId: i.productId,
-        productName: i.productName,
-        qty: i.qty,
-        unitCost: i.unitCost,
-      })),
-      notes: newPO.notes || undefined,
-      createdAt: new Date().toISOString(),
-    };
-
-    addPurchaseOrder(order);
-    setNewPO({ items: [{ productId: '', productName: '', qty: 1, unitCost: 0 }], notes: '' });
-    setShowPurchaseModal(false);
+    try {
+      await addPurchaseOrder({
+        supplierId: showDetailView,
+        total,
+        paid: 0,
+        status: 'CONFIRMED',
+        items: validItems.map((i) => ({
+          productId: i.productId,
+          qty: i.qty,
+          unitCost: i.unitCost,
+        })),
+        notes: newPO.notes || undefined,
+      });
+      setNewPO({ items: [{ productId: '', productName: '', qty: 1, unitCost: 0 }], notes: '' });
+      setShowPurchaseModal(false);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في إنشاء أمر الشراء');
+    }
   };
 
-  const handleAddPayment = (e: React.FormEvent) => {
+  const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showDetailView || newPayment.amount <= 0) return;
 
-    const payment: SupplierPayment = {
-      id: crypto.randomUUID(),
-      supplierId: showDetailView,
-      supplierName: detailSupplier?.name || '',
-      amount: Number(newPayment.amount),
-      paymentMethod: newPayment.paymentMethod,
-      reference: newPayment.reference || undefined,
-      notes: newPayment.notes || undefined,
-      paidAt: new Date().toISOString(),
-    };
-
-    addPayment(payment);
-    setNewPayment({ amount: 0, paymentMethod: 'CASH', reference: '', notes: '' });
-    setShowPaymentModal(false);
+    try {
+      await addPayment({
+        supplierId: showDetailView,
+        amount: Number(newPayment.amount),
+        paymentMethod: newPayment.paymentMethod,
+        reference: newPayment.reference || undefined,
+        notes: newPayment.notes || undefined,
+      });
+      setNewPayment({ amount: 0, paymentMethod: 'CASH', reference: '', notes: '' });
+      setShowPaymentModal(false);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في تسجيل الدفعة');
+    }
   };
 
   const addPOItem = () => {
@@ -269,7 +267,8 @@ export default function Suppliers() {
     const supplierBalance = getSupplierBalance(detailSupplier.id);
 
     return (
-      <div className="space-y-6 animate-fade-in-slide">
+      <div className="space-y-6">
+        <div className="space-y-6 animate-fade-in-slide">
         {/* Back Button & Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-center gap-3">
@@ -499,11 +498,12 @@ export default function Suppliers() {
             )}
           </div>
         </div>
+      </div>
 
-        {/* ========== Purchase Order Modal ========== */}
+      {/* ========== Purchase Order Modal ========== */}
         {showPurchaseModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="glass-card max-w-2xl w-full p-6 rounded-3xl space-y-4 border border-[var(--glass-border)] animate-fade-in-slide text-right max-h-[90vh] overflow-y-auto" dir="rtl">
+          <div className="modal-overlay">
+            <div className="modal-content-card max-w-2xl" dir="rtl">
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-bold text-[var(--text-primary)]">أمر شراء جديد - {detailSupplier.name}</h3>
                 <button onClick={() => setShowPurchaseModal(false)} className="p-1.5 rounded-lg hover:bg-[var(--border-color)] text-[var(--text-secondary)] cursor-pointer"><X className="w-5 h-5" /></button>
@@ -596,8 +596,8 @@ export default function Suppliers() {
 
         {/* ========== Payment Modal ========== */}
         {showPaymentModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="glass-card max-w-md w-full p-6 rounded-3xl space-y-4 border border-[var(--glass-border)] animate-fade-in-slide text-right" dir="rtl">
+          <div className="modal-overlay">
+            <div className="modal-content-card max-w-md" dir="rtl">
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-bold text-[var(--text-primary)]">تسجيل دفعة - {detailSupplier.name}</h3>
                 <button onClick={() => setShowPaymentModal(false)} className="p-1.5 rounded-lg hover:bg-[var(--border-color)] text-[var(--text-secondary)] cursor-pointer"><X className="w-5 h-5" /></button>
@@ -675,7 +675,8 @@ export default function Suppliers() {
 
   // ===================== MAIN LIST VIEW =====================
   return (
-    <div className="space-y-6 animate-fade-in-slide pb-20 lg:pb-0" dir="rtl">
+    <div className="space-y-6 pb-20 lg:pb-0" dir="rtl">
+      <div className="space-y-6 animate-fade-in-slide">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -841,11 +842,12 @@ export default function Suppliers() {
           </div>
         )}
       </div>
+    </div>
 
-      {/* ========== Add Supplier Modal ========== */}
+    {/* ========== Add Supplier Modal ========== */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card max-w-2xl w-full p-6 rounded-3xl space-y-4 border border-[var(--glass-border)] animate-fade-in-slide text-right max-h-[90vh] overflow-y-auto" dir="rtl">
+        <div className="modal-overlay">
+          <div className="modal-content-card max-w-2xl" dir="rtl">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-[var(--text-primary)]">تسجيل مورد جديد</h3>
               <button onClick={() => setShowAddModal(false)} className="p-1.5 rounded-lg hover:bg-[var(--border-color)] text-[var(--text-secondary)] cursor-pointer"><X className="w-5 h-5" /></button>

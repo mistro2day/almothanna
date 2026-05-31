@@ -50,9 +50,12 @@ export default function App() {
   const batches = useInventoryStore((state) => state.batches);
   const setProducts = useInventoryStore((state) => state.setProducts);
   const setBatches = useInventoryStore((state) => state.setBatches);
+  const fetchProducts = useInventoryStore((state) => state.fetchProducts);
+  const fetchBatches = useInventoryStore((state) => state.fetchBatches);
 
   const customers = useSalesStore((state) => state.customers);
   const setCustomers = useSalesStore((state) => state.setCustomers);
+  const fetchCustomers = useSalesStore((state) => state.fetchCustomers);
 
   const loadSuppliers = useSupplierStore((state) => state.loadLocalCache);
   const suppliers = useSupplierStore((state) => state.suppliers);
@@ -60,6 +63,9 @@ export default function App() {
   const setPurchaseOrders = useSupplierStore((state) => state.setPurchaseOrders);
   const setPayments = useSupplierStore((state) => state.setPayments);
   const purchaseOrders = useSupplierStore((state) => state.purchaseOrders);
+  const fetchSuppliers = useSupplierStore((state) => state.fetchSuppliers);
+  const fetchPurchaseOrders = useSupplierStore((state) => state.fetchPurchaseOrders);
+  const fetchPayments = useSupplierStore((state) => state.fetchPayments);
 
   const roleLabels: Record<string, string> = {
     ADMIN: 'مدير النظام',
@@ -68,104 +74,59 @@ export default function App() {
     ACCOUNTANT: 'قسم المحاسبة',
   };
 
-  // Load local caches once session is available
+  // Load local caches and fetch from backend once session is available
   useEffect(() => {
     if (!user) return;
     loadInventory();
     loadSuppliers();
-  }, [user, loadInventory, loadSuppliers]);
+    
+    // Fetch live data from backend
+    fetchProducts();
+    fetchBatches();
+    fetchCustomers();
+    fetchSuppliers();
+    fetchPurchaseOrders();
+    fetchPayments();
+  }, [user, loadInventory, loadSuppliers, fetchProducts, fetchBatches, fetchCustomers, fetchSuppliers, fetchPurchaseOrders, fetchPayments]);
 
   // Hydrate with initial data if local storage cache is empty (Offline First bootstrap)
   useEffect(() => {
-    if (products.length === 0) {
-      setProducts([
-        { id: '1', name: 'Amoxicillin 500mg', scientificName: 'Amoxicillin Trihydrate', barcode: '6251234567890', category: 'Antibiotics', unit: 'Box' },
-        { id: '2', name: 'Paracetamol 500mg', scientificName: 'Paracetamol', barcode: '6251234567891', category: 'Analgesics', unit: 'Box' },
-        { id: '3', name: 'Insulin Glargine 100 IU/ml', scientificName: 'Insulin Glargine', barcode: '6251234567893', category: 'Antidiabetics', unit: 'Vial' },
-      ]);
-    }
+    // Only hydrate if we are offline and have no data, otherwise rely on backend
+    if (isOffline) {
+      if (products.length === 0) {
+        setProducts([
+          { id: '1', name: 'Amoxicillin 500mg', scientificName: 'Amoxicillin Trihydrate', barcode: '6251234567890', category: 'Antibiotics', unit: 'Box' },
+          { id: '2', name: 'Paracetamol 500mg', scientificName: 'Paracetamol', barcode: '6251234567891', category: 'Analgesics', unit: 'Box' },
+          { id: '3', name: 'Insulin Glargine 100 IU/ml', scientificName: 'Insulin Glargine', barcode: '6251234567893', category: 'Antidiabetics', unit: 'Vial' },
+        ]);
+      }
 
-    if (batches.length === 0) {
-      const today = new Date();
-      
-      const expiry1 = new Date();
-      expiry1.setMonth(today.getMonth() + 2);
-      
-      const expiry2 = new Date();
-      expiry2.setMonth(today.getMonth() + 10);
+      if (batches.length === 0) {
+        const today = new Date();
+        
+        const expiry1 = new Date();
+        expiry1.setMonth(today.getMonth() + 2);
+        
+        const expiry2 = new Date();
+        expiry2.setMonth(today.getMonth() + 10);
 
-      const expiry3 = new Date();
-      expiry3.setMonth(today.getMonth() + 4);
+        const expiry3 = new Date();
+        expiry3.setMonth(today.getMonth() + 4);
 
-      setBatches([
-        { id: 'b1', batchNumber: 'AMX-2026-01', productId: '1', qty: 250, costPrice: 4200, expiryDate: expiry1.toISOString().split('T')[0], manufactureDate: '2025-01-10', productName: 'Amoxicillin 500mg' },
-        { id: 'b2', batchNumber: 'PCT-2026-05', productId: '2', qty: 1500, costPrice: 950, expiryDate: expiry2.toISOString().split('T')[0], manufactureDate: '2025-05-15', productName: 'Paracetamol 500mg' },
-        { id: 'b3', batchNumber: 'INS-2026-11', productId: '3', qty: 85, costPrice: 18500, expiryDate: expiry3.toISOString().split('T')[0], manufactureDate: '2025-02-01', productName: 'Insulin Glargine 100 IU/ml' },
-      ]);
-    }
+        setBatches([
+          { id: 'b1', batchNumber: 'AMX-2026-01', productId: '1', qty: 250, costPrice: 4200, expiryDate: expiry1.toISOString().split('T')[0], manufactureDate: '2025-01-10', productName: 'Amoxicillin 500mg' },
+          { id: 'b2', batchNumber: 'PCT-2026-05', productId: '2', qty: 1500, costPrice: 950, expiryDate: expiry2.toISOString().split('T')[0], manufactureDate: '2025-05-15', productName: 'Paracetamol 500mg' },
+          { id: 'b3', batchNumber: 'INS-2026-11', productId: '3', qty: 85, costPrice: 18500, expiryDate: expiry3.toISOString().split('T')[0], manufactureDate: '2025-02-01', productName: 'Insulin Glargine 100 IU/ml' },
+        ]);
+      }
 
-    if (customers.length === 0) {
-      setCustomers([
-        { id: 'c1', name: 'صيدلية الشفاء النموذجية', type: 'Pharmacy', state: 'الخرطوم', phone: '0912111111', creditLimit: 500000 },
-        { id: 'c2', name: 'مستشفى ود مدني التعليمي', type: 'Hospital', state: 'الجزيرة', phone: '0912222222', creditLimit: 2000000 },
-        { id: 'c3', name: 'صيدلية الميناء العسكرية', type: 'Pharmacy', state: 'البحر الأحمر', phone: '0912333333', creditLimit: 1000000 },
-      ]);
-    }
-
-    if (suppliers.length === 0) {
-      setSuppliers([
-        {
-          id: 's1', name: 'شركة أمجاد للأدوية', companyName: 'Amjad Pharmaceuticals Ltd.', type: 'pharma_company',
-          phone: '0918100100', email: 'info@amjad-pharma.sd', country: 'السودان', city: 'الخرطوم',
-          address: 'شارع المطار، الخرطوم', commercialReg: 'CR-2024-10234',
-          contactPerson: 'أحمد محمد علي', contactPhone: '0912500500',
-          creditLimit: 5000000, paymentTerms: 'NET_30', currency: 'SDG', isActive: true,
-          createdAt: '2026-01-15T00:00:00Z',
-        },
-        {
-          id: 's2', name: 'مصانع الدواء العربية', companyName: 'Arab Drug Industries', type: 'manufacturer',
-          phone: '0918200200', email: 'sales@arabdrug.com', country: 'مصر', city: 'القاهرة',
-          address: 'المنطقة الصناعية، العاشر من رمضان',
-          contactPerson: 'محمود حسن', contactPhone: '01012345678',
-          creditLimit: 10000000, paymentTerms: 'NET_60', currency: 'USD', isActive: true,
-          createdAt: '2025-11-01T00:00:00Z',
-        },
-        {
-          id: 's3', name: 'وكالة الشفاء للأدوية', type: 'wholesaler',
-          phone: '0918300300', country: 'السودان', city: 'بورتسودان',
-          contactPerson: 'عمر بابكر', contactPhone: '0912700700',
-          creditLimit: 2000000, paymentTerms: 'CASH_ON_DELIVERY', currency: 'SDG', isActive: true,
-          createdAt: '2026-03-20T00:00:00Z',
-        },
-      ]);
-
-      setPurchaseOrders([
-        {
-          id: 'po1', orderNumber: 'PO-000001', supplierId: 's1', supplierName: 'شركة أمجاد للأدوية',
-          total: 1050000, paid: 500000, status: 'PARTIAL',
-          items: [
-            { id: 'pi1', productId: '1', productName: 'Amoxicillin 500mg', qty: 100, unitCost: 4200 },
-            { id: 'pi2', productId: '2', productName: 'Paracetamol 500mg', qty: 700, unitCost: 900 },
-          ],
-          createdAt: '2026-04-10T00:00:00Z',
-        },
-        {
-          id: 'po2', orderNumber: 'PO-000002', supplierId: 's2', supplierName: 'مصانع الدواء العربية',
-          total: 1572500, paid: 0, status: 'CONFIRMED',
-          items: [
-            { id: 'pi3', productId: '3', productName: 'Insulin Glargine 100 IU/ml', qty: 85, unitCost: 18500 },
-          ],
-          createdAt: '2026-05-01T00:00:00Z',
-        },
-      ]);
-
-      setPayments([
-        {
-          id: 'pay1', supplierId: 's1', supplierName: 'شركة أمجاد للأدوية',
-          amount: 500000, paymentMethod: 'BANK_TRANSFER', reference: 'TRF-20260420-001',
-          notes: 'دفعة أولى من أمر الشراء PO-000001', paidAt: '2026-04-20T00:00:00Z',
-        },
-      ]);
+      if (customers.length === 0) {
+        setCustomers([
+          { id: 'c1', name: 'صيدلية الشفاء النموذجية', type: 'Pharmacy', state: 'الخرطوم', phone: '0912111111', creditLimit: 500000 },
+          { id: 'c2', name: 'مستشفى ود مدني التعليمي', type: 'Hospital', state: 'الجزيرة', phone: '0912222222', creditLimit: 2000000 },
+          { id: 'c3', name: 'صيدلية الميناء العسكرية', type: 'Pharmacy', state: 'البحر الأحمر', phone: '0912333333', creditLimit: 1000000 },
+        ]);
+      }
     }
   }, [user, products, batches, customers, suppliers]);
 

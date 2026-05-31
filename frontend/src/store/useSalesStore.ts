@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { apiClient } from '../api/apiClient';
 
 export interface Customer {
   id: string;
@@ -40,9 +41,11 @@ interface SalesState {
   addToOfflineQueue: (item: OfflineSalesQueueItem) => void;
   removeFromOfflineQueue: (id: string) => void;
   clearOfflineQueue: () => void;
+  fetchCustomers: () => Promise<void>;
+  addCustomer: (cust: Omit<Customer, 'id'>) => Promise<Customer>;
 }
 
-export const useSalesStore = create<SalesState>((set) => {
+export const useSalesStore = create<SalesState>((set, get) => {
   return {
     customers: [],
     cart: [],
@@ -93,5 +96,22 @@ export const useSalesStore = create<SalesState>((set) => {
     },
 
     clearOfflineQueue: () => set({ offlineSalesQueue: [] }),
+
+    fetchCustomers: async () => {
+      try {
+        const { data } = await apiClient.get<Customer[]>('/customers');
+        set({ customers: data });
+      } catch (err) {
+        console.error('Failed to fetch customers from backend:', err);
+      }
+    },
+
+    addCustomer: async (cust) => {
+      const { data } = await apiClient.post<Customer>('/customers', cust);
+      set((state) => ({
+        customers: [...state.customers, data],
+      }));
+      return data;
+    },
   };
 });

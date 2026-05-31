@@ -15,8 +15,13 @@ import {
   Search,
   Printer,
   DollarSign,
-  CheckCircle2
+  CheckCircle2,
+  Download,
+  Trash2,
+  Edit3,
+  MoreVertical
 } from 'lucide-react';
+import DatePicker from '../components/DatePicker';
 
 interface InvoiceItem {
   productName: string;
@@ -56,6 +61,21 @@ export default function Sales() {
   const [sales, setSales] = useState<Invoice[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Advanced features state variables
+  const getTodayStr = () => new Date().toISOString().split('T')[0];
+  const [invoiceDate, setInvoiceDate] = useState(getTodayStr());
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; invoiceId: string | null; loading: boolean }>({
+    open: false,
+    invoiceId: null,
+    loading: false,
+  });
+  const [isEditingDate, setIsEditingDate] = useState(false);
+  const [editDateValue, setEditDateValue] = useState('');
 
   // Payment modal state
   const [paymentModal, setPaymentModal] = useState<{ open: boolean; invoice: Invoice | null; amount: number; loading: boolean }>({
@@ -66,15 +86,39 @@ export default function Sales() {
   });
 
   const filteredInvoiceList = sales.filter((sale) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.trim().toLowerCase();
-    const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
-    return (
-      sale.id.toLowerCase().includes(q) ||
-      sale.customerName.toLowerCase().includes(q) ||
-      statusLabel.includes(q) ||
-      sale.total.toString().includes(q)
-    );
+    // 1. Text Search Filter
+    const matchesSearch = (() => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim().toLowerCase();
+      const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
+      return (
+        sale.id.toLowerCase().includes(q) ||
+        sale.customerName.toLowerCase().includes(q) ||
+        statusLabel.includes(q) ||
+        sale.total.toString().includes(q)
+      );
+    })();
+
+    // 2. Date Range Filter
+    const matchesDateRange = (() => {
+      const saleDate = new Date(sale.createdAt);
+      // Strip time elements for clean day comparison
+      saleDate.setHours(0, 0, 0, 0);
+
+      if (fromDate) {
+        const from = new Date(fromDate);
+        from.setHours(0, 0, 0, 0);
+        if (saleDate < from) return false;
+      }
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(0, 0, 0, 0);
+        if (saleDate > to) return false;
+      }
+      return true;
+    })();
+
+    return matchesSearch && matchesDateRange;
   });
 
   useEffect(() => {
@@ -242,6 +286,102 @@ export default function Sales() {
     printWindow.document.close();
   };
 
+  const handleExportExcel = () => {
+    const headers = ['رقم الفاتورة', 'العميل', 'التاريخ', 'الإجمالي (SDG)', 'المدفوع (SDG)', 'المتبقي (SDG)', 'الحالة'];
+    const rows = filteredInvoiceList.map((sale) => {
+      const remaining = Math.max(0, sale.total - sale.paid);
+      const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
+      return [
+        sale.id,
+        sale.customerName,
+        new Date(sale.createdAt).toLocaleDateString('ar-SA'),
+        sale.total,
+        sale.paid,
+        remaining,
+        statusLabel
+      ];
+    });
+
+    const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `سجل_المبيعات_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank', 'width=1000,height=800');
+    if (!printWindow) return;
+
+    const rowsHTML = filteredInvoiceList.map((sale, idx) => {
+      const remaining = Math.max(0, sale.total - sale.paid);
+      const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
+      return `
+        <tr>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd;">${idx + 1}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${sale.id}</td>
+          <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${sale.customerName}</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd;">${new Date(sale.createdAt).toLocaleDateString('ar-SA')}</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; font-weight: bold;">${sale.total.toLocaleString('en-US')} SDG</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; color: #10b981;">${sale.paid.toLocaleString('en-US')} SDG</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd; color: #rose-500;">${remaining.toLocaleString('en-US')} SDG</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #ddd;">${statusLabel}</td>
+        </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>تقرير سجل المبيعات</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', 'Arial', sans-serif; direction: rtl; padding: 20px; }
+    h1 { text-align: center; color: #065f46; margin-bottom: 5px; }
+    p.subtitle { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 25px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+    th { background-color: #10b981; color: white; padding: 10px; font-size: 13px; text-align: center; }
+    td { font-size: 12px; padding: 8px; text-align: center; border: 1px solid #ddd; }
+    .footer { text-align: left; font-size: 11px; color: #94a3b8; margin-top: 50px; }
+  </style>
+</head>
+<body>
+  <h1>المثنى للأدوية</h1>
+  <p class="subtitle">تقرير سجل الفواتير والمبيعات - تاريخ التصدير: ${new Date().toLocaleDateString('ar-SA')}</p>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 40px;">#</th>
+        <th>رقم الفاتورة</th>
+        <th>العميل</th>
+        <th>التاريخ</th>
+        <th>الإجمالي</th>
+        <th>المدفوع</th>
+        <th>المتبقي</th>
+        <th>الحالة</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHTML}
+    </tbody>
+  </table>
+  <div class="footer">
+    <p>تم استخراج هذا التقرير تلقائياً من نظام سجلات المثنى للأدوية</p>
+  </div>
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>
+    `);
+    printWindow.document.close();
+  };
+
   const openPaymentModal = (sale: Invoice) => {
     const remaining = Math.max(0, sale.total - sale.paid);
     setPaymentModal({
@@ -275,8 +415,9 @@ export default function Sales() {
   };
 
   const handleCheckout = async () => {
-    if (!selectedCustomerId || cart.length === 0) return;
+    if (!selectedCustomerId || cart.length === 0 || isSubmitting) return;
 
+    setIsSubmitting(true);
     try {
       const response = await apiClient.post<Invoice>('/sales/offline', {
         customerId: selectedCustomerId,
@@ -288,7 +429,7 @@ export default function Sales() {
         })),
         total: cartTotal,
         paid: paidAmount,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(invoiceDate).toISOString(),
       });
 
       setInvoiceNumber(response.data.id);
@@ -301,20 +442,22 @@ export default function Sales() {
 
       // Reload sales from server
       await loadSales();
+
+      clearCart();
+      setPaidAmount(0);
+      setSelectedCustomerId('');
+      setInvoiceDate(getTodayStr()); // Reset to today's date
+      setIssuingInvoice(false);
+
+      setTimeout(() => {
+        setInvoiceSuccess(false);
+      }, 5000);
     } catch (error) {
       console.error('Failed to create sale:', error);
       alert('فشل في إصدار الفاتورة');
-      return;
+    } finally {
+      setIsSubmitting(false);
     }
-
-    clearCart();
-    setPaidAmount(0);
-    setSelectedCustomerId('');
-    setIssuingInvoice(false);
-
-    setTimeout(() => {
-      setInvoiceSuccess(false);
-    }, 5000);
   };
 
   const invoiceCount = sales.length;
@@ -337,7 +480,10 @@ export default function Sales() {
   const InvoiceCard = ({ sale }: { sale: Invoice }) => {
     const remaining = Math.max(0, sale.total - sale.paid);
     return (
-      <div className="glass-card p-4 rounded-xl border border-[var(--glass-border)] space-y-3">
+      <div 
+        onClick={() => setSelectedInvoice(sale)} 
+        className="glass-card p-4 rounded-xl border border-[var(--glass-border)] space-y-3 cursor-pointer hover:border-emerald-500/25 hover:shadow-lg transition-all"
+      >
         <div className="flex justify-between items-start">
           <span className={`text-xs font-bold px-2 py-1 rounded-full ${
             sale.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : 
@@ -368,10 +514,10 @@ export default function Sales() {
             <span className="text-[10px] text-[var(--text-secondary)]">
               {new Date(sale.createdAt).toLocaleDateString('en-US')}
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
               {sale.status !== 'PAID' && (
                 <button
-                  onClick={() => openPaymentModal(sale)}
+                  onClick={(e) => { e.stopPropagation(); openPaymentModal(sale); }}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-semibold transition-colors"
                 >
                   <DollarSign className="w-3.5 h-3.5" />
@@ -379,7 +525,7 @@ export default function Sales() {
                 </button>
               )}
               <button
-                onClick={() => handlePrint(sale)}
+                onClick={(e) => { e.stopPropagation(); handlePrint(sale); }}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 text-xs font-semibold transition-colors"
               >
                 <Printer className="w-3.5 h-3.5" />
@@ -393,7 +539,8 @@ export default function Sales() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in-slide" dir="rtl">
+    <div className="space-y-6" dir="rtl">
+      <div className="space-y-6 animate-fade-in-slide">
       {/* Success Toast */}
       {invoiceSuccess && (
         <div className="fixed top-4 right-4 z-50 bg-emerald-500 text-white px-6 py-3 rounded-2xl shadow-lg flex items-center gap-2">
@@ -478,12 +625,48 @@ export default function Sales() {
           </div>
 
           <div className="glass-card p-4 sm:p-6 rounded-3xl border border-[var(--glass-border)]">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 lg:gap-4 mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <div>
                 <h2 className="text-lg sm:text-xl font-semibold text-[var(--text-primary)]">الفواتير المصدرة</h2>
-                <p className="mt-1 text-sm text-[var(--text-secondary)]">عرض سريع لكل الفواتير المسجلة وأوضاع الدفع.</p>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">عرض سريع لكل الفواتير المسجلة وأوضاع الدفع والتصدير.</p>
               </div>
-              <div className="text-sm text-[var(--text-secondary)]">آخر تحديث: {new Date().toLocaleDateString('en-US')}</div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button
+                  onClick={handleExportExcel}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>تصدير إكسل</span>
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>تصدير بي دي إف</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Date Filters Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 items-end" dir="rtl">
+              <div className="space-y-1.5 text-right">
+                <label className="block text-xs font-bold text-[var(--text-secondary)]">من تاريخ</label>
+                <DatePicker value={fromDate} onChange={setFromDate} placeholder="اختر تاريخ البداية" />
+              </div>
+              <div className="space-y-1.5 text-right">
+                <label className="block text-xs font-bold text-[var(--text-secondary)]">إلى تاريخ</label>
+                <DatePicker value={toDate} onChange={setToDate} placeholder="اختر تاريخ النهاية" />
+              </div>
+              {(fromDate || toDate) && (
+                <button
+                  onClick={() => { setFromDate(''); setToDate(''); }}
+                  className="px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer h-[42px] flex items-center justify-center gap-1.5"
+                >
+                  <X className="w-4 h-4" />
+                  <span>إلغاء التصفية</span>
+                </button>
+              )}
             </div>
 
             {/* Search Bar */}
@@ -539,7 +722,11 @@ export default function Sales() {
                       {filteredInvoiceList.map((sale: Invoice) => {
                         const remaining = Math.max(0, sale.total - sale.paid);
                         return (
-                          <tr key={sale.id} className="hover:bg-[var(--border-color)]/30 transition-colors">
+                          <tr 
+                            key={sale.id} 
+                            onClick={() => setSelectedInvoice(sale)} 
+                            className="hover:bg-[var(--border-color)]/30 transition-colors cursor-pointer"
+                          >
                             <td className="py-3 pr-2 font-mono font-semibold text-[var(--text-primary)]">{sale.id}</td>
                             <td className="py-3 text-center text-[var(--text-primary)]">{sale.customerName}</td>
                             <td className="py-3 text-center font-mono text-[var(--text-secondary)]">{new Date(sale.createdAt).toLocaleDateString('en-US')}</td>
@@ -555,11 +742,11 @@ export default function Sales() {
                                 {sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق'}
                               </span>
                             </td>
-                            <td className="py-3 text-center">
+                            <td className="py-3 text-center" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1.5">
                                 {sale.status !== 'PAID' && (
                                   <button
-                                    onClick={() => openPaymentModal(sale)}
+                                    onClick={(e) => { e.stopPropagation(); openPaymentModal(sale); }}
                                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-semibold transition-colors"
                                   >
                                     <DollarSign className="w-3.5 h-3.5" />
@@ -567,7 +754,7 @@ export default function Sales() {
                                   </button>
                                 )}
                                 <button
-                                  onClick={() => handlePrint(sale)}
+                                  onClick={(e) => { e.stopPropagation(); handlePrint(sale); }}
                                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 text-xs font-semibold transition-colors"
                                 >
                                   <Printer className="w-3.5 h-3.5" />
@@ -663,8 +850,31 @@ export default function Sales() {
                   <div className="flex justify-between"><span>المدفوع حالياً</span><strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong></div>
                   <div className="flex justify-between border-t border-[var(--border-color)] pt-3"><span className="font-semibold">المتبقي</span><strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong></div>
                 </div>
-                <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} placeholder="المبلغ المدفوع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
-                <button onClick={handleCheckout} disabled={!selectedCustomerId || cart.length === 0} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors h-11">إصدار الفاتورة</button>
+                <div className="space-y-1.5 text-right">
+                  <label className="block text-xs font-semibold text-[var(--text-secondary)]">تاريخ الفاتورة</label>
+                  <DatePicker
+                    value={invoiceDate}
+                    onChange={setInvoiceDate}
+                  />
+                </div>
+                <div className="space-y-1.5 text-right">
+                  <label className="block text-xs font-semibold text-[var(--text-secondary)]">المبلغ المدفوع</label>
+                  <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} placeholder="المبلغ المدفوع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
+                </div>
+                <button 
+                  onClick={handleCheckout} 
+                  disabled={!selectedCustomerId || cart.length === 0 || isSubmitting} 
+                  className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors h-11 flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>جاري الإصدار...</span>
+                    </>
+                  ) : (
+                    <span>إصدار الفاتورة</span>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -743,23 +953,43 @@ export default function Sales() {
                   </div>
                 </div>
                 <div className="glass-card p-7 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] space-y-5 shadow-lg shadow-black/10">
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-2 text-sm text-right">
+                    <label className="block text-[var(--text-secondary)] font-semibold">تاريخ الفاتورة</label>
+                    <DatePicker
+                      value={invoiceDate}
+                      onChange={setInvoiceDate}
+                    />
+                  </div>
+                  <div className="space-y-2 text-sm text-right">
                     <label className="block text-[var(--text-secondary)] font-semibold">المبلغ المدفوع</label>
                     <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
                   </div>
-                  <button onClick={handleCheckout} disabled={!selectedCustomerId || cart.length === 0} className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors">إصدار الفاتورة</button>
+                  <button 
+                    onClick={handleCheckout} 
+                    disabled={!selectedCustomerId || cart.length === 0 || isSubmitting} 
+                    className="w-full rounded-2xl bg-emerald-600 px-5 py-4 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>جاري الإصدار...</span>
+                      </>
+                    ) : (
+                      <span>إصدار الفاتورة</span>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         </div>
       )}
+      </div>
 
       {/* Payment Modal */}
       {paymentModal.open && paymentModal.invoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={closePaymentModal}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative z-10 w-full max-w-md glass-card rounded-3xl border border-[var(--glass-border)] p-6 sm:p-8 shadow-2xl" onClick={(e) => e.stopPropagation()} dir="rtl">
+        <div className="modal-overlay" onClick={closePaymentModal}>
+          <div className="modal-content-card max-w-md" onClick={(e) => e.stopPropagation()} dir="rtl">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold text-[var(--text-primary)]">سداد الفاتورة</h3>
               <button onClick={closePaymentModal} className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors">
@@ -814,6 +1044,218 @@ export default function Sales() {
                 ) : (
                   <><CheckCircle2 className="w-5 h-5" /><span>تأكيد السداد</span></>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Helper functions for delete and update invoice date */}
+      {(() => {
+        // We inject the functions inside the component scope but declare them as closures
+        window.handleDeleteSale = async () => {
+          if (!deleteConfirm.invoiceId) return;
+          setDeleteConfirm((prev) => ({ ...prev, loading: true }));
+          try {
+            await apiClient.delete(`/sales/${deleteConfirm.invoiceId}`);
+            await loadSales();
+            setDeleteConfirm({ open: false, invoiceId: null, loading: false });
+            setSelectedInvoice(null);
+          } catch (err) {
+            console.error(err);
+            alert('فشل في حذف الفاتورة');
+            setDeleteConfirm((prev) => ({ ...prev, loading: false }));
+          }
+        };
+
+        window.handleUpdateInvoiceDate = async (invoiceId: string, newDateStr: string) => {
+          try {
+            await apiClient.patch(`/sales/${invoiceId}`, { createdAt: new Date(newDateStr).toISOString() });
+            await loadSales();
+            setIsEditingDate(false);
+            if (selectedInvoice && selectedInvoice.id === invoiceId) {
+              setSelectedInvoice({
+                ...selectedInvoice,
+                createdAt: new Date(newDateStr).toISOString(),
+              });
+            }
+          } catch (err) {
+            console.error('Failed to update date:', err);
+            alert('فشل في تعديل تاريخ الفاتورة');
+          }
+        };
+      })()}
+
+      {/* Invoice Details Modal */}
+      {selectedInvoice && (
+        <div className="modal-overlay" onClick={() => { setSelectedInvoice(null); setIsEditingDate(false); }}>
+          <div className="modal-content-card max-w-2xl" onClick={(e) => e.stopPropagation()} dir="rtl">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-[var(--text-primary)]">تفاصيل الفاتورة</h3>
+                <p className="text-xs text-[var(--text-secondary)] font-mono mt-0.5">{selectedInvoice.id}</p>
+              </div>
+              <button 
+                onClick={() => { setSelectedInvoice(null); setIsEditingDate(false); }} 
+                className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Action Buttons Row */}
+            <div className="flex flex-wrap gap-2 mb-6 bg-[var(--bg-primary)] p-3 rounded-2xl border border-[var(--border-color)]">
+              <span className="text-xs font-bold text-[var(--text-secondary)] w-full mb-1">إجراءات الفاتورة:</span>
+              <button
+                onClick={() => {
+                  setEditDateValue(selectedInvoice.createdAt.split('T')[0]);
+                  setIsEditingDate(!isEditingDate);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>تعديل التاريخ</span>
+              </button>
+              <button
+                onClick={() => handlePrint(selectedInvoice)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>طباعة الفاتورة</span>
+              </button>
+              <button
+                onClick={() => handlePrint(selectedInvoice)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-500/10 hover:bg-teal-500/20 text-teal-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>تصدير PDF</span>
+              </button>
+              <button
+                onClick={() => setDeleteConfirm({ open: true, invoiceId: selectedInvoice.id, loading: false })}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer sm:mr-auto"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف الفاتورة</span>
+              </button>
+            </div>
+
+            {/* Inline Date Editor */}
+            {isEditingDate && (
+              <div className="mb-6 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-3">
+                <p className="text-xs font-bold text-amber-600">تغيير تاريخ إصدار الفاتورة لوقت سابق أو تاريخ محدد:</p>
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1">
+                    <DatePicker value={editDateValue} onChange={setEditDateValue} />
+                  </div>
+                  <button
+                    onClick={() => window.handleUpdateInvoiceDate(selectedInvoice.id, editDateValue)}
+                    className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    حفظ التعديل
+                  </button>
+                  <button
+                    onClick={() => setIsEditingDate(false)}
+                    className="px-4 py-2.5 bg-[var(--border-color)] text-[var(--text-primary)] rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Invoice Info Details */}
+            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+              <div className="space-y-1">
+                <span className="text-xs text-[var(--text-secondary)]">العميل</span>
+                <p className="font-bold text-[var(--text-primary)]">{selectedInvoice.customerName}</p>
+              </div>
+              <div className="space-y-1 text-left">
+                <span className="text-xs text-[var(--text-secondary)]">تاريخ الإصدار</span>
+                <p className="font-mono font-bold text-[var(--text-primary)]">
+                  {new Date(selectedInvoice.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+            </div>
+
+            {/* Items Table */}
+            <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden mb-6">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="bg-[var(--bg-primary)] border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                    <th className="p-3">#</th>
+                    <th className="p-3">اسم المنتج</th>
+                    <th className="p-3 text-center">التشغيلة</th>
+                    <th className="p-3 text-center">الكمية</th>
+                    <th className="p-3 text-center">سعر الوحدة</th>
+                    <th className="p-3 text-left">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-color)]">
+                  {selectedInvoice.items.map((item, idx) => (
+                    <tr key={idx} className="text-[var(--text-primary)]">
+                      <td className="p-3 font-mono">{idx + 1}</td>
+                      <td className="p-3 font-semibold">{item.productName}</td>
+                      <td className="p-3 text-center font-mono text-[var(--text-secondary)]">{item.batchNumber}</td>
+                      <td className="p-3 text-center font-bold font-mono">{item.qty}</td>
+                      <td className="p-3 text-center font-mono">{item.price.toLocaleString('en-US')} SDG</td>
+                      <td className="p-3 text-left font-bold font-mono">{(item.qty * item.price).toLocaleString('en-US')} SDG</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Financial Summary */}
+            <div className="glass-card rounded-2xl border border-[var(--border-color)] p-4 space-y-2.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)]">إجمالي الفاتورة</span>
+                <span className="font-bold text-[var(--text-primary)]">{selectedInvoice.total.toLocaleString('en-US')} SDG</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)]">المبلغ المسدد</span>
+                <span className="font-bold text-emerald-500">{selectedInvoice.paid.toLocaleString('en-US')} SDG</span>
+              </div>
+              <div className="flex justify-between border-t border-[var(--border-color)] pt-2.5">
+                <span className="font-bold text-[var(--text-secondary)]">المتبقي المستحق</span>
+                <span className="font-bold text-rose-500">{Math.max(0, selectedInvoice.total - selectedInvoice.paid).toLocaleString('en-US')} SDG</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Warning Modal */}
+      {deleteConfirm.open && (
+        <div className="modal-overlay z-9999" onClick={() => setDeleteConfirm({ open: false, invoiceId: null, loading: false })}>
+          <div className="modal-content-card max-w-sm border-rose-500/20 bg-[var(--bg-secondary)] shadow-2xl shadow-rose-950/20" onClick={(e) => e.stopPropagation()} dir="rtl">
+            <div className="flex items-center gap-3 mb-4 text-rose-500">
+              <AlertCircle className="w-8 h-8 animate-bounce" />
+              <h3 className="text-lg font-bold">تأكيد حذف الفاتورة؟</h3>
+            </div>
+            
+            <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-6">
+              هل أنت متأكد تماماً من رغبتك في حذف هذه الفاتورة؟ 
+              <br />
+              <strong className="text-rose-500">تنبيه هام:</strong> سيقوم النظام برفع كميات الأدوية تلقائياً وإرجاعها للمخازن والتشغيلات الأصلية الخاصة بها لضمان دقة الأرصدة.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => window.handleDeleteSale()}
+                disabled={deleteConfirm.loading}
+                className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                {deleteConfirm.loading ? (
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <span>نعم، حذف نهائي</span>
+                )}
+              </button>
+              <button
+                onClick={() => setDeleteConfirm({ open: false, invoiceId: null, loading: false })}
+                className="flex-1 py-3 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl text-sm font-bold transition-colors cursor-pointer"
+              >
+                إلغاء
               </button>
             </div>
           </div>

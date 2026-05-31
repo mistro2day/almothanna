@@ -3,9 +3,13 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SalesModule } from './sales/sales.module';
 import { AuthModule } from './auth/auth.module';
+import { ProductsModule } from './products/products.module';
+import { BatchesModule } from './batches/batches.module';
+import { CustomersModule } from './customers/customers.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
 
 @Module({
-  imports: [SalesModule, AuthModule],
+  imports: [SalesModule, AuthModule, ProductsModule, BatchesModule, CustomersModule, SuppliersModule],
   controllers: [AppController],
   providers: [AppService],
 })

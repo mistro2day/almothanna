@@ -7,15 +7,19 @@ export class SalesService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async generateInvoiceNumber(): Promise<string> {
-    // Ensure the sequence exists (idempotent)
-    await this.prisma.$executeRawUnsafe(
-      `CREATE SEQUENCE IF NOT EXISTS invoice_seq START 1`
-    );
-    // Get the next value atomically
-    const result = await this.prisma.$queryRawUnsafe<{ nextval: bigint }[]>(
-      `SELECT nextval('invoice_seq') AS nextval`
-    );
-    const num = Number(result[0].nextval);
+    const counter = await this.prisma.invoiceCounter.upsert({
+      where: { id: 1 },
+      update: {
+        nextVal: {
+          increment: 1,
+        },
+      },
+      create: {
+        id: 1,
+        nextVal: 1,
+      },
+    });
+    const num = Number(counter.nextVal);
     return `IN-${String(num).padStart(5, '0')}`;
   }
 
@@ -159,6 +163,68 @@ export class SalesService {
           price: item.price,
         })),
       };
+    });
+  }
+
+  async deleteSale(id: string) {
+    // Find the sale first with its items to restore the batches
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+
+    if (!sale) {
+      throw new NotFoundException('Sale not found');
+    }
+
+    // Restore batch quantities
+    const batchUpdates = sale.items.map((item) =>
+      this.prisma.batch.update({
+        where: { id: item.batchId },
+        data: {
+          qty: {
+            increment: item.qty,
+          },
+        },
+      }),
+    );
+
+    // Create corrective StockMovements (IN type for cancellation)
+    const stockMovements = sale.items.map((item) =>
+      this.prisma.stockMovement.create({
+        data: {
+          batchId: item.batchId,
+          type: 'IN',
+          qty: item.qty,
+          reason: 'Sale Cancelled',
+        },
+      }),
+    );
+
+    // Delete the sale (Prisma cascade delete handles SaleItems)
+    const deleteSale = this.prisma.sale.delete({
+      where: { id },
+    });
+
+    await this.prisma.$transaction([
+      ...batchUpdates,
+      ...stockMovements,
+      deleteSale,
+    ]);
+
+    return { success: true };
+  }
+
+  async updateSaleDate(id: string, createdAt: string) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+    });
+    if (!sale) {
+      throw new NotFoundException('Sale not found');
+    }
+    return this.prisma.sale.update({
+      where: { id },
+      data: { createdAt: new Date(createdAt) },
     });
   }
 }

@@ -19,7 +19,7 @@ const generateBatchNumber = () => {
 };
 
 export default function Inventory() {
-  const { products, batches, addOfflineProduct, addOfflineBatch } = useInventoryStore();
+  const { products, batches, addProduct, addBatch } = useInventoryStore();
   const [search, setSearch] = useState('');
   
   // Modals visibility
@@ -51,41 +51,44 @@ export default function Inventory() {
     p.barcode?.includes(search)
   );
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProduct.name || !newProduct.unit) return;
     
-    const prod: Product = {
-      id: crypto.randomUUID(),
-      ...newProduct
-    };
-
-    addOfflineProduct(prod);
-    setNewProduct({ name: '', scientificName: '', barcode: '', category: '', unit: 'Box' });
-    setShowProductModal(false);
+    try {
+      await addProduct(newProduct);
+      setNewProduct({ name: '', scientificName: '', barcode: '', category: '', unit: 'Box' });
+      setShowProductModal(false);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في إضافة المنتج');
+    }
   };
 
-  const handleAddBatch = (e: React.FormEvent) => {
+  const handleAddBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBatch.batchNumber || !newBatch.productId || newBatch.qty <= 0) return;
 
-    const batch: Batch = {
-      id: crypto.randomUUID(),
-      batchNumber: newBatch.batchNumber,
-      productId: newBatch.productId,
-      qty: Number(newBatch.qty),
-      costPrice: Number(newBatch.costPrice),
-      expiryDate: newBatch.expiryDate,
-      manufactureDate: newBatch.manufactureDate
-    };
-
-    addOfflineBatch(batch);
-    setNewBatch({ batchNumber: '', productId: '', qty: 0, costPrice: 0, expiryDate: '', manufactureDate: '' });
-    setShowBatchModal(false);
+    try {
+      await addBatch({
+        batchNumber: newBatch.batchNumber,
+        productId: newBatch.productId,
+        qty: Number(newBatch.qty),
+        costPrice: Number(newBatch.costPrice),
+        expiryDate: newBatch.expiryDate,
+        manufactureDate: newBatch.manufactureDate
+      });
+      setNewBatch({ batchNumber: '', productId: '', qty: 0, costPrice: 0, expiryDate: '', manufactureDate: '' });
+      setShowBatchModal(false);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في إضافة التشغيلة');
+    }
   };
 
   return (
-    <div className="space-y-6 animate-fade-in-slide pb-20 lg:pb-0" dir="rtl">
+    <div className="space-y-6 pb-20 lg:pb-0" dir="rtl">
+      <div className="space-y-6 animate-fade-in-slide">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -211,11 +214,12 @@ export default function Inventory() {
           )}
         </div>
       </div>
+    </div>
 
-      {/* Modal 1: Add Product */}
+    {/* Modal 1: Add Product */}
       {showProductModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card max-w-md w-full p-6 rounded-3xl space-y-4 border border-[var(--glass-border)] animate-fade-in-slide text-right" dir="rtl">
+        <div className="modal-overlay">
+          <div className="modal-content-card max-w-md" dir="rtl">
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة منتج دوائي جديد</h3>
             
             <form onSubmit={handleAddProduct} className="space-y-3 text-sm">
@@ -302,8 +306,8 @@ export default function Inventory() {
 
       {/* Modal 2: Add Batch */}
       {showBatchModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card max-w-md w-full p-6 rounded-3xl space-y-4 border border-[var(--glass-border)] animate-fade-in-slide text-right" dir="rtl">
+        <div className="modal-overlay">
+          <div className="modal-content-card max-w-md" dir="rtl">
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة تشغيلة دواء (Batch Entry)</h3>
             
             <form onSubmit={handleAddBatch} className="space-y-3 text-sm">

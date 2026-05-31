@@ -1,2 +1,3 @@
 backend/dist/
 backend/devserver.log
+node_modules

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { apiClient } from '../api/apiClient';
 
 export interface Product {
   id: string;
@@ -33,6 +34,10 @@ interface InventoryState {
   getNearExpiryBatches: (monthsThreshold?: number) => Batch[];
   loadLocalCache: () => void;
   saveLocalCache: () => void;
+  fetchProducts: () => Promise<void>;
+  fetchBatches: () => Promise<void>;
+  addProduct: (prod: Omit<Product, 'id'>) => Promise<Product>;
+  addBatch: (batch: Omit<Batch, 'id'>) => Promise<Batch>;
 }
 
 export const useInventoryStore = create<InventoryState>((set, get) => {
@@ -110,6 +115,70 @@ export const useInventoryStore = create<InventoryState>((set, get) => {
       const { products, batches } = get();
       localStorage.setItem('cache_products', JSON.stringify(products));
       localStorage.setItem('cache_batches', JSON.stringify(batches));
+    },
+
+    fetchProducts: async () => {
+      set({ loading: true });
+      try {
+        const { data } = await apiClient.get<Product[]>('/products');
+        set({ products: data });
+        get().saveLocalCache();
+      } catch (err) {
+        console.error('Failed to fetch products from backend:', err);
+      } finally {
+        set({ loading: false });
+      }
+    },
+
+    fetchBatches: async () => {
+      set({ loading: true });
+      try {
+        const { data } = await apiClient.get<any[]>('/batches');
+        const hydrated = data.map((b) => ({
+          id: b.id,
+          batchNumber: b.batchNumber,
+          productId: b.productId,
+          qty: b.qty,
+          costPrice: b.costPrice,
+          expiryDate: b.expiryDate.split('T')[0],
+          manufactureDate: b.manufactureDate.split('T')[0],
+          productName: b.product?.name,
+        }));
+        set({ batches: hydrated });
+        get().saveLocalCache();
+      } catch (err) {
+        console.error('Failed to fetch batches from backend:', err);
+      } finally {
+        set({ loading: false });
+      }
+    },
+
+    addProduct: async (prod) => {
+      const { data } = await apiClient.post<Product>('/products', prod);
+      set((state) => ({
+        products: [data, ...state.products],
+      }));
+      get().saveLocalCache();
+      return data;
+    },
+
+    addBatch: async (batch) => {
+      const { data } = await apiClient.post<any>('/batches', batch);
+      const hydrated: Batch = {
+        id: data.id,
+        batchNumber: data.batchNumber,
+        productId: data.productId,
+        qty: data.qty,
+        costPrice: data.costPrice,
+        expiryDate: data.expiryDate.split('T')[0],
+        manufactureDate: data.manufactureDate.split('T')[0],
+        productName: data.product?.name,
+      };
+      set((state) => ({
+        batches: [hydrated, ...state.batches],
+      }));
+      get().saveLocalCache();
+      return hydrated;
     },
   };
 });

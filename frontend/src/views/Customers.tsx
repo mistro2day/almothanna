@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 export default function Customers() {
-  const { customers, setCustomers } = useSalesStore();
+  const { customers, addCustomer } = useSalesStore();
   const [search, setSearch] = useState('');
   const [selectedState, setSelectedState] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -44,22 +44,24 @@ export default function Customers() {
     'النيل الأبيض'
   ];
 
-  const handleAddCustomer = (e: React.FormEvent) => {
+  const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCust.name || !newCust.phone) return;
 
-    const customer: Customer = {
-      id: crypto.randomUUID(),
-      name: newCust.name,
-      type: newCust.type,
-      state: newCust.state,
-      phone: newCust.phone,
-      creditLimit: Number(newCust.creditLimit)
-    };
-
-    setCustomers([customer, ...customers]);
-    setNewCust({ name: '', type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
-    setShowAddModal(false);
+    try {
+      await addCustomer({
+        name: newCust.name,
+        type: newCust.type,
+        state: newCust.state,
+        phone: newCust.phone,
+        creditLimit: Number(newCust.creditLimit)
+      });
+      setNewCust({ name: '', type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
+      setShowAddModal(false);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في إضافة العميل');
+    }
   };
 
   const filteredCustomers = customers.filter(c => {
@@ -73,7 +75,8 @@ export default function Customers() {
   });
 
   return (
-    <div className="space-y-6 animate-fade-in-slide pb-20 lg:pb-0" dir="rtl">
+    <div className="space-y-6 pb-20 lg:pb-0" dir="rtl">
+      <div className="space-y-6 animate-fade-in-slide">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -194,11 +197,12 @@ export default function Customers() {
           </div>
         </div>
       </div>
+    </div>
 
-      {/* Add Customer Modal */}
+    {/* Add Customer Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card max-w-md w-full p-6 rounded-3xl space-y-4 border border-[var(--glass-border)] animate-fade-in-slide text-right" dir="rtl">
+        <div className="modal-overlay">
+          <div className="modal-content-card max-w-md" dir="rtl">
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة عميل معتمد جديد</h3>
             
             <form onSubmit={handleAddCustomer} className="space-y-3 text-sm">

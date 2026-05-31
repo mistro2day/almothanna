@@ -218,3 +218,92 @@ body {
     max-height: 90vh;
   }
 }
+
+/* ==========================================
+   Premium High-Fidelity Custom Modals System
+   ========================================== */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background-color: rgba(2, 6, 23, 0.65);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  overflow-y: auto;
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-content-card {
+  width: 100%;
+  max-height: 92vh;
+  overflow: hidden; /* Prevent overflow and clip top accent bar to rounded corners */
+  border-radius: 1.75rem;
+  box-shadow: 0 30px 60px -15px rgba(2, 6, 23, 0.45);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  position: relative;
+  padding: 1.5rem 1.75rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeInSlide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (max-width: 768px) {
+  .modal-content-card {
+    max-height: 85vh;
+    overflow-y: auto; /* Allow scroll only on small screen sizes */
+  }
+}
+
+/* Beautiful color accent bar for modal card */
+.modal-content-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: linear-gradient(90deg, #10b981, #14b8a6);
+  z-index: 10;
+  border-radius: 1.75rem 1.75rem 0 0;
+}
+
+/* High fidelity inputs, selects, and textareas - compact sizing */
+.modal-content-card input,
+.modal-content-card select,
+.modal-content-card textarea {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  border-radius: 1rem !important;
+  padding: 0.65rem 1rem;
+  outline: none;
+  font-weight: 500;
+}
+
+.modal-content-card input:focus,
+.modal-content-card select:focus,
+.modal-content-card textarea:focus {
+  border-color: rgba(16, 185, 129, 0.55);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
+  background-color: var(--bg-secondary);
+}
+
+.modal-content-card select {
+  cursor: pointer;
+}
+
+.modal-content-card label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+  display: block;
+}
+
