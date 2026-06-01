@@ -15,6 +15,7 @@ import Customers from './views/Customers';
 import Suppliers from './views/Suppliers';
 import Login from './views/Login';
 import SettingsView from './views/Settings';
+import Reports from './views/Reports';
 import NotificationsCenter from './components/NotificationsCenter';
 
 
@@ -34,10 +35,11 @@ import {
   UserCircle2,
   Menu,
   X,
-  Settings
+  Settings,
+  BarChart3
 } from 'lucide-react';
 
-type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'settings';
+type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'settings' | 'reports';
 
 export default function App() {
   const theme = useThemeStore((state) => state.theme);
@@ -162,6 +164,7 @@ export default function App() {
     { id: 'sales', label: 'إصدار الفواتير', icon: Receipt },
     { id: 'customers', label: 'العملاء والشحن', icon: UsersRound },
     { id: 'suppliers', label: 'الموردين', icon: Building2 },
+    { id: 'reports', label: 'التقارير الذكية', icon: BarChart3 },
     { id: 'settings', label: 'الإعدادات', icon: Settings },
   ];
 
@@ -173,6 +176,7 @@ export default function App() {
       case 'sales': return <Sales />;
       case 'customers': return <Customers />;
       case 'suppliers': return <Suppliers />;
+      case 'reports': return <Reports />;
       case 'settings': return <SettingsView />;
       default: return <Dashboard />;
     }
