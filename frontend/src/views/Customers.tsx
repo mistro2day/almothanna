@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSalesStore, Customer } from '../store/useSalesStore';
+import { useActivityStore } from '../store/useActivityStore';
 import { 
   Users, 
   MapPin, 
@@ -56,6 +57,10 @@ export default function Customers() {
         phone: newCust.phone,
         creditLimit: Number(newCust.creditLimit)
       });
+      useActivityStore.getState().logActivity(
+        'إضافة عميل جديد',
+        `تم تسجيل العميل ${newCust.name} (ولاية ${newCust.state}) بسقف ائتمان ${newCust.creditLimit.toLocaleString()} SDG`
+      );
       setNewCust({ name: '', type: 'Pharmacy', state: 'الخرطوم', phone: '', creditLimit: 500000 });
       setShowAddModal(false);
     } catch (err) {

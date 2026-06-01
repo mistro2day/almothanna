@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useInventoryStore, Product, Batch } from '../store/useInventoryStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useActivityStore } from '../store/useActivityStore';
 import { 
   Search, 
   Plus, 
@@ -66,6 +67,10 @@ export default function Inventory() {
     
     try {
       await addProduct(newProduct);
+      useActivityStore.getState().logActivity(
+        'إضافة منتج جديد',
+        `تم إضافة المنتج الدوائي ${newProduct.name} (الاسم العلمي: ${newProduct.scientificName || '---'}) للفئة ${newProduct.category || 'عام'}`
+      );
       setNewProduct({ name: '', scientificName: '', barcode: '', category: '', unit: 'Box' });
       setShowProductModal(false);
     } catch (err) {
@@ -87,6 +92,11 @@ export default function Inventory() {
         expiryDate: newBatch.expiryDate,
         manufactureDate: newBatch.manufactureDate
       });
+      const prodName = products.find(p => p.id === newBatch.productId)?.name || '';
+      useActivityStore.getState().logActivity(
+        'إضافة تشغيلة جديدة',
+        `تم إضافة تشغيلة جديدة برقم ${newBatch.batchNumber} للمنتج ${prodName} بعدد ${newBatch.qty} قطعة بسعر تكلفة ${newBatch.costPrice} SDG`
+      );
       setNewBatch({ batchNumber: '', productId: '', qty: 0, costPrice: 0, expiryDate: '', manufactureDate: '' });
       setShowBatchModal(false);
     } catch (err) {
@@ -101,6 +111,11 @@ export default function Inventory() {
     setAddingQtyLoading(true);
     try {
       await addBatchQty(selectedBatch.id, additionalQty);
+      const prodName = products.find(p => p.id === selectedBatch.productId)?.name || '';
+      useActivityStore.getState().logActivity(
+        'توريد كميات إضافية',
+        `تم توريد كمية إضافية قدرها ${additionalQty} قطعة للتشغيلة ${selectedBatch.batchNumber} الخاصة بمنتج ${prodName}`
+      );
       alert('تم إضافة الكمية للتشغيلة بنجاح');
       setAdditionalQty(0);
       setSelectedBatch(null);

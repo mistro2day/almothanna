@@ -15,6 +15,7 @@ import Customers from './views/Customers';
 import Suppliers from './views/Suppliers';
 import Login from './views/Login';
 import SettingsView from './views/Settings';
+import NotificationsCenter from './components/NotificationsCenter';
 
 
 // Icons
@@ -295,12 +296,15 @@ export default function App() {
           </div>
         </div>
         
-        <button
-          onClick={() => setMobileDrawerOpen(true)}
-          className="p-3 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationsCenter />
+          <button
+            onClick={() => setMobileDrawerOpen(true)}
+            className="p-3 rounded-xl bg-[var(--border-color)]/50 hover:bg-[var(--border-color)] text-[var(--text-primary)] transition-colors cursor-pointer"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       {/* Mobile Full-Screen Navigation Overlay */}
@@ -429,6 +433,17 @@ export default function App() {
 
       {/* Main Content Area - Desktop */}
       <main className="hidden md:block flex-1 p-6 md:p-10 z-10 overflow-y-auto max-h-screen">
+        {/* Top Header Bar for Desktop */}
+        <div className="flex justify-between items-center mb-6 pb-4 border-b border-[var(--border-color)]" dir="rtl">
+          <div className="text-right">
+            <h1 className="text-2xl font-bold font-display text-[var(--text-primary)]">
+              {navItems.find(n => n.id === activeTab)?.label || 'لوحة التحكم'}
+            </h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <NotificationsCenter />
+          </div>
+        </div>
         {renderView()}
       </main>
 

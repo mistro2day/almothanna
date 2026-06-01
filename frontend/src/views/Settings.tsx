@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSettingsStore, CompanySettings, ManagedUser } from '../store/useSettingsStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useActivityStore } from '../store/useActivityStore';
 import { 
   Building, 
   Users, 
@@ -15,7 +16,8 @@ import {
   Upload,
   UserCheck,
   Building2,
-  DollarSign
+  DollarSign,
+  Activity
 } from 'lucide-react';
 
 export default function Settings() {
@@ -33,7 +35,9 @@ export default function Settings() {
     deleteUser 
   } = useSettingsStore();
 
-  const [activeSubTab, setActiveSubTab] = useState<'company' | 'users'>('company');
+  const { activities, loadingActivities, fetchActivities } = useActivityStore();
+
+  const [activeSubTab, setActiveSubTab] = useState<'company' | 'users' | 'activities'>('company');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -67,6 +71,7 @@ export default function Settings() {
     if (currentUser?.role === 'ADMIN') {
       fetchUsers();
     }
+    fetchActivities();
   }, [currentUser]);
 
   const showNotification = (msg: string, isError = false) => {
@@ -107,6 +112,7 @@ export default function Settings() {
     try {
       await updateSettings(companyForm);
       showNotification('تم حفظ إعدادات الشركة بنجاح ✨');
+      useActivityStore.getState().logActivity('تعديل إعدادات الشركة', `تم تعديل بيانات شركة ${companyForm.name || ''}`);
     } catch (err: any) {
       console.error(err);
       showNotification('فشل في حفظ الإعدادات، يرجى التحقق من المدخلات', true);
@@ -120,6 +126,7 @@ export default function Settings() {
 
     try {
       await createUser(userForm);
+      useActivityStore.getState().logActivity('إضافة مستخدم جديد', `تم إنشاء حساب للمستخدم ${userForm.name} بدور ${roleLabels[userForm.role] || userForm.role}`);
       setUserForm({ name: '', phone: '', email: '', password: '', role: 'SALES' });
       setShowAddUserModal(false);
       showNotification('تم إضافة المستخدم الجديد بنجاح');
@@ -143,6 +150,7 @@ export default function Settings() {
         role: editingUser.role,
         ...(userForm.password ? { password: userForm.password } : {})
       });
+      useActivityStore.getState().logActivity('تحديث بيانات مستخدم', `تم تعديل بيانات حساب المستخدم ${editingUser.name}`);
       setUserForm(prev => ({ ...prev, password: '' }));
       setShowEditUserModal(false);
       setEditingUser(null);
@@ -164,7 +172,10 @@ export default function Settings() {
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا المستخدم نهائياً؟')) return;
 
     try {
+      const userToDelete = users.find(u => u.id === id);
+      const nameStr = userToDelete ? userToDelete.name : id;
       await deleteUser(id);
+      useActivityStore.getState().logActivity('حذف مستخدم', `تم حذف حساب المستخدم ${nameStr}`);
       showNotification('تم حذف المستخدم بنجاح');
       fetchUsers();
     } catch (err: any) {
@@ -222,6 +233,17 @@ export default function Settings() {
         >
           <Users className="w-4 h-4" />
           <span>المستخدمين والصلاحيات</span>
+        </button>
+        <button
+          onClick={() => setActiveSubTab('activities')}
+          className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer ${
+            activeSubTab === 'activities'
+              ? 'border-emerald-500 text-emerald-500 bg-emerald-500/5'
+              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span>النشاطات (Activities)</span>
         </button>
       </div>
 
@@ -466,6 +488,77 @@ export default function Settings() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab 3: Activities Log */}
+      {activeSubTab === 'activities' && (
+        <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] animate-fade-in text-right">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <div>
+              <h2 className="text-lg sm:text-xl font-semibold text-[var(--text-primary)]">سجل نشاطات النظام (Activities Log)</h2>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                متابعة شاملة لكافة العمليات والأنشطة التي تتم داخل المشروع مع تحديد اسم المستخدم المسؤول.
+              </p>
+            </div>
+            <button
+              onClick={() => fetchActivities()}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 rounded-xl text-xs font-bold transition-all cursor-pointer border border-emerald-500/20"
+            >
+              <span>تحديث السجل</span>
+            </button>
+          </div>
+
+          {loadingActivities ? (
+            <div className="text-center py-10">
+              <div className="inline-block w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              <p className="mt-3 text-[var(--text-secondary)]">جاري تحميل سجل الأنشطة...</p>
+            </div>
+          ) : activities.length === 0 ? (
+            <div className="text-center py-12 text-[var(--text-secondary)]">
+              لا توجد نشاطات مسجلة حالياً في النظام.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                    <th className="pb-3 pr-2">المستخدم</th>
+                    <th className="pb-3 text-center">العملية / النشاط</th>
+                    <th className="pb-3 text-right">التفاصيل</th>
+                    <th className="pb-3 text-left">الوقت والتاريخ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-color)]">
+                  {activities.map((act) => (
+                    <tr key={act.id} className="hover:bg-[var(--border-color)]/20 transition-colors">
+                      <td className="py-4 pr-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs">
+                            {act.user?.name ? act.user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : '؟'}
+                          </div>
+                          <div className="text-right">
+                            <div className="font-semibold text-[var(--text-primary)]">{act.user?.name || 'مستخدم غير معروف'}</div>
+                            <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--border-color)]/40 px-1.5 py-0.5 rounded">
+                              {roleLabels[act.user?.role] || act.user?.role || '---'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 text-center font-bold text-emerald-500">{act.action}</td>
+                      <td className="py-4 text-right text-[var(--text-secondary)] max-w-md break-words">{act.details}</td>
+                      <td className="py-4 text-left font-mono text-[var(--text-secondary)] whitespace-nowrap">
+                        {new Date(act.createdAt).toLocaleString('ar-SA', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short'
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

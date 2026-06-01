@@ -19,14 +19,16 @@ enum Role {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  phone     String   @unique
-  email     String?  @unique
-  password  String
-  role      Role     @default(SALES)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String         @id @default(uuid())
+  name          String
+  phone         String         @unique
+  email         String?        @unique
+  password      String
+  role          Role           @default(SALES)
+  activities    Activity[]
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model Product {
@@ -252,5 +254,24 @@ model CompanySettings {
   currency      String   @default("SDG")
   invoiceFooter String?  @default("شكراً لتعاملكم معنا - المثنى للأدوية")
   updatedAt     DateTime @updatedAt
+}
+
+model Activity {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  details   String
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 

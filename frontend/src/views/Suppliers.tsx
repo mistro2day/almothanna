@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useSupplierStore, Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from '../store/useSupplierStore';
 import { useInventoryStore } from '../store/useInventoryStore';
+import { useActivityStore } from '../store/useActivityStore';
 import {
   Building2,
   Plus,
@@ -172,6 +173,10 @@ export default function Suppliers() {
         notes: newSupplier.notes || undefined,
         isActive: true,
       });
+      useActivityStore.getState().logActivity(
+        'إضافة مورد جديد',
+        `تم تسجيل المورد ${newSupplier.name} (شركة: ${newSupplier.companyName || '---'}) بنجاح`
+      );
       setNewSupplier({
         name: '', companyName: '', type: 'pharma_company', phone: '', email: '',
         country: 'السودان', city: '', address: '', commercialReg: '',
@@ -207,6 +212,10 @@ export default function Suppliers() {
         })),
         notes: newPO.notes || undefined,
       });
+      useActivityStore.getState().logActivity(
+        'أمر شراء جديد',
+        `تم إنشاء أمر شراء جديد للمورد ${detailSupplier?.name || ''} بقيمة إجمالية ${total.toLocaleString()} SDG بعدد ${validItems.length} أصناف`
+      );
       setNewPO({ items: [{ productId: '', productName: '', qty: 1, unitCost: 0 }], notes: '' });
       setShowPurchaseModal(false);
     } catch (err) {
@@ -227,6 +236,10 @@ export default function Suppliers() {
         reference: newPayment.reference || undefined,
         notes: newPayment.notes || undefined,
       });
+      useActivityStore.getState().logActivity(
+        'سداد لمورد',
+        `تم سداد دفعة مالية بقيمة ${newPayment.amount.toLocaleString()} SDG للمورد ${detailSupplier?.name || ''} عبر ${paymentMethodMap[newPayment.paymentMethod] || newPayment.paymentMethod}`
+      );
       setNewPayment({ amount: 0, paymentMethod: 'CASH', reference: '', notes: '' });
       setShowPaymentModal(false);
     } catch (err) {

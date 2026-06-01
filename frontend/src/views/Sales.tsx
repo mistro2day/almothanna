@@ -4,6 +4,7 @@ import { useSalesStore, Customer, CartItem } from '../store/useSalesStore';
 import { apiClient } from '../api/apiClient';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useActivityStore } from '../store/useActivityStore';
 import { 
   ShoppingCart, 
   UserCheck, 
@@ -482,6 +483,10 @@ export default function Sales() {
 
     try {
       await apiClient.post(`/sales/${invoice.id}/pay`, { amount });
+      useActivityStore.getState().logActivity(
+        'تحصيل مبيعات',
+        `تم استلام دفعة بقيمة ${amount.toLocaleString()} SDG للفاتورة رقم ${invoice.id} للعميل ${invoice.customerName}`
+      );
       // Reload sales from server
       await loadSales();
     } catch (error) {
@@ -512,6 +517,11 @@ export default function Sales() {
 
       setInvoiceNumber(response.data.id);
       setInvoiceSuccess(true);
+
+      useActivityStore.getState().logActivity(
+        'فاتورة مبيعات جديدة',
+        `تم إصدار فاتورة مبيعات رقم ${response.data.id} للعميل ${selectedCustomer?.name || ''} بقيمة ${cartTotal.toLocaleString()} SDG (المدفوع: ${paidAmount.toLocaleString()} SDG)`
+      );
 
       // Decrement batch quantities in the local inventory store
       cart.forEach((item: CartItem) => {
