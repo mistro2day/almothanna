@@ -48,6 +48,7 @@ export default function Reports() {
   const [supplierSearch, setSupplierSearch] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [shippingSearch, setShippingSearch] = useState('');
+  const [repSearch, setRepSearch] = useState('');
 
   // Data states
   const [salesData, setSalesData] = useState<any>(null);
@@ -256,7 +257,7 @@ export default function Reports() {
             {activeTab === 'sales' && salesData && (
               <div className="space-y-6 animate-fade-in-slide">
                 {/* Stats Summary Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                   <div className="glass-card p-5 rounded-2xl border-r-4 border-r-emerald-500 flex items-center justify-between">
                     <div className="space-y-1">
                       <span className="text-xs font-semibold text-[var(--text-secondary)]">إجمالي المبيعات الإيرادات</span>
@@ -287,6 +288,14 @@ export default function Reports() {
                       <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">{(salesData.summary.totalUnpaid || 0).toLocaleString()} SDG</h3>
                     </div>
                     <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl"><Clock className="w-5 h-5" /></div>
+                  </div>
+
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-indigo-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">عمولات المناديب المستحقة</span>
+                      <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">{(salesData.summary.totalRepresentativeCommissions || 0).toLocaleString()} SDG</h3>
+                    </div>
+                    <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-xl"><Users className="w-5 h-5" /></div>
                   </div>
                 </div>
 
@@ -417,6 +426,79 @@ export default function Reports() {
                     </table>
                   </div>
                 </div>
+
+                {/* Representatives Sales & Commissions Table */}
+                <div className="glass-card p-5 rounded-2xl space-y-4 text-right">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div className="space-y-1">
+                      <h3 className="text-base font-bold text-[var(--text-primary)]">👥 تقرير أداء وعمولات مناديب المبيعات</h3>
+                      <p className="text-xs text-[var(--text-secondary)]">تتبع مبيعات كل مندوب، المبالغ المحصلة فعلياً والعمولات المستحقة (تُحسب كنسبة من المبالغ المحصلة)</p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl w-full sm:w-64">
+                        <Search className="w-4 h-4 text-[var(--text-secondary)]" />
+                        <input 
+                          type="text" 
+                          placeholder="ابحث باسم المندوب..." 
+                          value={repSearch}
+                          onChange={(e) => setRepSearch(e.target.value)}
+                          className="bg-transparent text-xs outline-none text-[var(--text-primary)] w-full placeholder-[var(--text-secondary)]"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => exportToCSV(
+                          salesData.representativesSalesReport || [], 
+                          'representatives_commissions_report', 
+                          ['اسم المندوب', 'رقم الهاتف', 'نسبة العمولة %', 'عدد العمليات', 'إجمالي المبيعات', 'المبالغ المحصلة فعلياً', 'العمولة المستحقة'],
+                          (rep) => [rep.name, rep.phone || '-', `${rep.commissionRate}%`, rep.salesCount.toString(), rep.totalSales.toString(), rep.totalPaid.toString(), rep.totalCommission.toString()]
+                        )}
+                        className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>تصدير Excel</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="border-b border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
+                          <th className="py-3 px-4 font-bold">اسم المندوب</th>
+                          <th className="py-3 px-4 font-bold">رقم الهاتف</th>
+                          <th className="py-3 px-4 font-bold">نسبة العمولة</th>
+                          <th className="py-3 px-4 font-bold">عدد فواتير البيع</th>
+                          <th className="py-3 px-4 font-bold">إجمالي المبيعات</th>
+                          <th className="py-3 px-4 font-bold">المحصل الفعلي</th>
+                          <th className="py-3 px-4 font-bold">العمولة المستحقة</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border-color)]/40 text-xs">
+                        {(!salesData.representativesSalesReport || salesData.representativesSalesReport.length === 0) ? (
+                          <tr>
+                            <td colSpan={7} className="py-8 text-center text-[var(--text-secondary)]">لا توجد مبيعات مسجلة باسم أي مندوب حالياً.</td>
+                          </tr>
+                        ) : (
+                          salesData.representativesSalesReport
+                            .filter((rep: any) => rep.name.toLowerCase().includes(repSearch.toLowerCase()))
+                            .map((rep: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-[var(--border-color)]/20 text-[var(--text-primary)]">
+                                <td className="py-3.5 px-4 font-bold">{rep.name}</td>
+                                <td className="py-3.5 px-4 text-[var(--text-secondary)] font-mono">{rep.phone || '-'}</td>
+                                <td className="py-3.5 px-4"><span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-500 font-bold">{rep.commissionRate}%</span></td>
+                                <td className="py-3.5 px-4 font-bold font-mono">{rep.salesCount.toLocaleString()} عملية</td>
+                                <td className="py-3.5 px-4 font-mono">{rep.totalSales.toLocaleString()} SDG</td>
+                                <td className="py-3.5 px-4 font-mono text-blue-500 font-semibold">{rep.totalPaid.toLocaleString()} SDG</td>
+                                <td className="py-3.5 px-4 font-bold font-mono text-emerald-500">{rep.totalCommission.toLocaleString()} SDG</td>
+                              </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
               </div>
             )}
 

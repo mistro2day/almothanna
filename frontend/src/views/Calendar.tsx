@@ -82,7 +82,7 @@ export default function InstallmentsCalendar() {
   const getDayInstallments = (date: Date) => {
     if (!date) return [];
     const dateStr = date.toISOString().split('T')[0];
-    return installments.filter(inst => inst.dueDate.startsWith(dateStr));
+    return installments.filter(inst => inst.dueDate.startsWith(dateStr) && inst.status !== 'PAID');
   };
 
   const handleDateClick = (date: Date) => {

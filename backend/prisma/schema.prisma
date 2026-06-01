@@ -65,15 +65,29 @@ model Batch {
 }
 
 model Customer {
-  id          String   @id @default(uuid())
-  name        String
-  type        String   // e.g. Pharmacy, Hospital, Distributor
-  state       String   // Sudan State e.g. Khartoum, Gezira, Red Sea
-  phone       String   @unique
-  creditLimit Float    @default(0)
-  sales       Sale[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String          @id @default(uuid())
+  name             String
+  type             String          // e.g. Pharmacy, Hospital, Distributor
+  state            String          // Sudan State e.g. Khartoum, Gezira, Red Sea
+  phone            String          @unique
+  creditLimit      Float           @default(0)
+  sales            Sale[]
+  representativeId String?
+  representative   Representative? @relation("CustomerRepresentative", fields: [representativeId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model Representative {
+  id             String     @id @default(uuid())
+  name           String
+  phone          String     @unique
+  commissionRate Float      @default(0) // Percentage, e.g. 5.0 for 5%
+  isActive       Boolean    @default(true)
+  customers      Customer[] @relation("CustomerRepresentative")
+  sales          Sale[]     @relation("SaleRepresentative")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 }
 
 enum SaleStatus {
@@ -84,17 +98,19 @@ enum SaleStatus {
 }
 
 model Sale {
-  id             String          @id @default(uuid())
-  customerId     String
-  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  total          Float
-  paid           Float           @default(0)
-  status         SaleStatus      @default(PENDING)
-  items          SaleItem[]
-  deliveryOrders DeliveryOrder[]
-  installments   Installment[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id               String          @id @default(uuid())
+  customerId       String
+  customer         Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  total            Float
+  paid             Float           @default(0)
+  status           SaleStatus      @default(PENDING)
+  items            SaleItem[]
+  deliveryOrders   DeliveryOrder[]
+  installments     Installment[]
+  representativeId String?
+  representative   Representative? @relation("SaleRepresentative", fields: [representativeId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 }
 
 model Installment {

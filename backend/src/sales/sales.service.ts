@@ -64,6 +64,7 @@ export class SalesService {
         total: dto.total,
         paid: dto.paid,
         status,
+        representativeId: dto.representativeId || null,
         createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
         items: {
           create: dto.items.map((item) => ({
@@ -84,6 +85,7 @@ export class SalesService {
       },
       include: {
         customer: true,
+        representative: true,
         installments: true,
         items: {
           include: {
@@ -129,6 +131,11 @@ export class SalesService {
       paid: sale.paid,
       status: sale.status,
       createdAt: sale.createdAt.toISOString(),
+      representative: sale.representative ? {
+        id: sale.representative.id,
+        name: sale.representative.name,
+        commissionRate: sale.representative.commissionRate,
+      } : null,
       items: sale.items.map((item: any) => ({
         productName: item.product.name,
         batchNumber: item.batch.batchNumber,
@@ -151,6 +158,7 @@ export class SalesService {
       orderBy: { createdAt: 'desc' },
       include: {
         customer: true,
+        representative: true,
         installments: true,
         items: {
           include: {
@@ -174,6 +182,11 @@ export class SalesService {
         paid: sale.paid,
         status: sale.status,
         createdAt: sale.createdAt.toISOString(),
+        representative: sale.representative ? {
+          id: sale.representative.id,
+          name: sale.representative.name,
+          commissionRate: sale.representative.commissionRate,
+        } : null,
         items: sale.items.map((item: any) => ({
           productName: item.product.name,
           batchNumber: item.batch.batchNumber,

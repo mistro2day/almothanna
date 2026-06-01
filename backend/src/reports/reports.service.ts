@@ -20,6 +20,7 @@ export class ReportsService {
       },
       include: {
         customer: true,
+        representative: true,
         items: {
           include: {
             product: true,
@@ -52,6 +53,20 @@ export class ReportsService {
       cost: number;
       profit: number;
     }> = {};
+
+    // Representatives sales & commission map
+    const representativesSalesMap: Record<string, {
+      id: string;
+      name: string;
+      phone: string;
+      commissionRate: number;
+      totalSales: number;
+      totalPaid: number;
+      totalCommission: number;
+      salesCount: number;
+    }> = {};
+
+    let totalRepresentativeCommissions = 0;
 
     for (const sale of sales) {
       totalRevenue += sale.total;
@@ -89,10 +104,39 @@ export class ReportsService {
         productSalesMap[pid].cost += itemCost;
         productSalesMap[pid].profit += itemProfit;
       }
+
+      // Populate representative report
+      if (sale.representative) {
+        const rep = sale.representative;
+        if (!representativesSalesMap[rep.id]) {
+          representativesSalesMap[rep.id] = {
+            id: rep.id,
+            name: rep.name,
+            phone: rep.phone,
+            commissionRate: rep.commissionRate,
+            totalSales: 0,
+            totalPaid: 0,
+            totalCommission: 0,
+            salesCount: 0,
+          };
+        }
+        representativesSalesMap[rep.id].totalSales += sale.total;
+        representativesSalesMap[rep.id].totalPaid += sale.paid;
+        const commissionForThisSale = (sale.paid * rep.commissionRate) / 100;
+        representativesSalesMap[rep.id].totalCommission += commissionForThisSale;
+        representativesSalesMap[rep.id].salesCount += 1;
+        totalRepresentativeCommissions += commissionForThisSale;
+      }
     }
 
     const totalProfit = totalRevenue - totalCost;
     const itemsSalesReport = Object.values(productSalesMap).sort((a, b) => b.revenue - a.revenue);
+    const representativesSalesReport = Object.values(representativesSalesMap).map(rep => ({
+      ...rep,
+      totalSales: Math.round(rep.totalSales),
+      totalPaid: Math.round(rep.totalPaid),
+      totalCommission: Math.round(rep.totalCommission),
+    })).sort((a, b) => b.totalSales - a.totalSales);
 
     // Monthly trends for chart
     const monthlyMap: Record<string, { month: string; sales: number; profit: number }> = {};
@@ -136,6 +180,7 @@ export class ReportsService {
         totalUnpaid: Math.round(totalUnpaid),
         profitMargin: totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0,
         invoiceCount: sales.length,
+        totalRepresentativeCommissions: Math.round(totalRepresentativeCommissions),
       },
       statusDistribution: [
         { name: 'مدفوعة بالكامل', value: statusCounts.PAID, color: '#10b981' },
@@ -144,6 +189,7 @@ export class ReportsService {
       ],
       itemsSalesReport,
       monthlyTrends,
+      representativesSalesReport,
     };
   }
 

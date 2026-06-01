@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { apiClient } from '../api/apiClient';
+import { Representative } from './useRepresentativesStore';
 
 export interface Customer {
   id: string;
@@ -8,6 +9,8 @@ export interface Customer {
   state: string; // Sudan state
   phone: string;
   creditLimit: number;
+  representativeId?: string;
+  representative?: Representative;
 }
 
 export interface CartItem {
@@ -42,9 +45,12 @@ interface SalesState {
   removeFromOfflineQueue: (id: string) => void;
   clearOfflineQueue: () => void;
   fetchCustomers: () => Promise<void>;
-  addCustomer: (cust: Omit<Customer, 'id'>) => Promise<Customer>;
+  addCustomer: (cust: Omit<Customer, 'id' | 'representative'>) => Promise<Customer>;
+  updateCustomer: (id: string, cust: Partial<Omit<Customer, 'id' | 'representative'>>) => Promise<Customer>;
   selectedInvoiceIdForDetails: string | null;
   setSelectedInvoiceIdForDetails: (id: string | null) => void;
+  pendingView: string | null;
+  setPendingView: (view: string | null) => void;
 }
 
 export const useSalesStore = create<SalesState>((set, get) => {
@@ -53,8 +59,10 @@ export const useSalesStore = create<SalesState>((set, get) => {
     cart: [],
     offlineSalesQueue: [],
     selectedInvoiceIdForDetails: null,
+    pendingView: null,
 
     setSelectedInvoiceIdForDetails: (id) => set({ selectedInvoiceIdForDetails: id }),
+    setPendingView: (view) => set({ pendingView: view }),
 
     setCustomers: (customers) => {
       set({ customers });
@@ -115,6 +123,14 @@ export const useSalesStore = create<SalesState>((set, get) => {
       const { data } = await apiClient.post<Customer>('/customers', cust);
       set((state) => ({
         customers: [...state.customers, data],
+      }));
+      return data;
+    },
+
+    updateCustomer: async (id, cust) => {
+      const { data } = await apiClient.patch<Customer>(`/customers/${id}`, cust);
+      set((state) => ({
+        customers: state.customers.map((c) => (c.id === id ? data : c)),
       }));
       return data;
     },

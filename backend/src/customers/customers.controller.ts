@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Patch, Param } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 
 @Controller('customers')
@@ -19,8 +19,25 @@ export class CustomersController {
       state: string;
       phone: string;
       creditLimit?: number;
+      representativeId?: string;
     },
   ) {
     return this.customersService.create(dto);
+  }
+
+  @Patch(':id')
+  async updateCustomer(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      name?: string;
+      type?: string;
+      state?: string;
+      phone?: string;
+      creditLimit?: number;
+      representativeId?: string;
+    },
+  ) {
+    return this.customersService.update(id, dto);
   }
 }

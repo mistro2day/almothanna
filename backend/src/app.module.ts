@@ -12,6 +12,7 @@ import { UsersModule } from './users/users.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
+import { RepresentativesModule } from './representatives/representatives.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ReportsModule } from './reports/reports.module';
     ActivitiesModule,
     NotificationsModule,
     ReportsModule,
+    RepresentativesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

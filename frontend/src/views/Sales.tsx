@@ -5,6 +5,7 @@ import { apiClient } from '../api/apiClient';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useActivityStore } from '../store/useActivityStore';
+import { useRepresentativesStore } from '../store/useRepresentativesStore';
 import { 
   ShoppingCart, 
   UserCheck, 
@@ -24,7 +25,8 @@ import {
   Edit3,
   MoreVertical,
   ArrowRight,
-  Save
+  Save,
+  Briefcase
 } from 'lucide-react';
 import DatePicker from '../components/DatePicker';
 
@@ -53,6 +55,7 @@ interface Invoice {
   createdAt: string;
   items: InvoiceItem[];
   installments?: InvoiceInstallment[];
+  representative?: { id: string; name: string; commissionRate: number } | null;
 }
 
 type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
@@ -62,6 +65,7 @@ export default function Sales() {
   const { customers, cart, addToCart, removeFromCart, updateCartQty, clearCart, addCustomer } = useSalesStore();
   const { settings } = useSettingsStore();
   const { user } = useAuthStore();
+  const { representatives } = useRepresentativesStore();
 
   // Price List States
   const [showPriceListModal, setShowPriceListModal] = useState(false);
@@ -413,9 +417,26 @@ export default function Sales() {
   };
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedRepId, setSelectedRepId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [showQuickAddCustomer, setShowQuickAddCustomer] = useState(false);
+  const [repSearch, setRepSearch] = useState('');
+  const [isRepDropdownOpen, setIsRepDropdownOpen] = useState(false);
+
+  const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+
+  useEffect(() => {
+    if (selectedCustomer) {
+      if (selectedCustomer.representativeId) {
+        setSelectedRepId(selectedCustomer.representativeId);
+      } else {
+        setSelectedRepId('');
+      }
+    } else {
+      setSelectedRepId('');
+    }
+  }, [selectedCustomer]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [quickCust, setQuickCust] = useState({
@@ -634,9 +655,10 @@ export default function Sales() {
   const [editDateValue, setEditDateValue] = useState('');
 
   // Payment modal state
-  const [paymentModal, setPaymentModal] = useState<{ open: boolean; invoice: Invoice | null; amount: number; loading: boolean }>({
+  const [paymentModal, setPaymentModal] = useState<{ open: boolean; invoice: Invoice | null; installmentId?: string; amount: number; loading: boolean }>({
     open: false,
     invoice: null,
+    installmentId: undefined,
     amount: 0,
     loading: false,
   });
@@ -781,7 +803,6 @@ export default function Sales() {
   };
 
   const cartTotal = cart.reduce((sum: number, item: CartItem) => sum + (item.qty * item.price), 0);
-  const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
   const loadSales = async () => {
     try {
@@ -894,6 +915,7 @@ export default function Sales() {
     </div>
     <div class="meta-grid">
       <div class="col"><span>العميل</span><span>${sale.customerName}</span></div>
+      <div class="col"><span>المندوب</span><span>${sale.representative ? `${sale.representative.name} (${sale.representative.commissionRate}%)` : 'بيع مباشر بدون عمولة'}</span></div>
       <div class="col"><span>التاريخ</span><span>${new Date(sale.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</span></div>
       <div class="col"><span>رقم الفاتورة</span><span style="direction: ltr; text-align: left;">${sale.id}</span></div>
       <div class="col"><span>حالة الدفع</span><span class="status-badge status-${sale.status}">${statusLabel}</span></div>
@@ -913,6 +935,144 @@ export default function Sales() {
     </div>
   </div>
   <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>
+    `);
+
+    printWindow.document.close();
+  };
+
+  const handleDownloadPDF = (sale: Invoice) => {
+    const currency = settings?.currency || "SDG";
+    const remaining = Math.max(0, sale.total - sale.paid);
+    const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
+    const paidLabel = sale.paid > 0 ? sale.paid.toLocaleString('en-US') + ' ' + currency : '---';
+
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyPhone = settings?.phone || "0912345678";
+    const companyEmail = settings?.email ? ` &nbsp;|&nbsp; البريد: ${settings.email}` : "";
+    const companyAddress = settings?.address || "السودان - أمدرمان";
+    const companyLogoHtml = settings?.logo 
+      ? `<div class="logo-container"><img src="${settings.logo}" /></div>` 
+      : '';
+    const regAndTaxHtml = (settings?.commercialReg || settings?.taxNumber)
+      ? `<p style="font-size: 11px; color: #64748b; margin-top: 4px;">${settings.commercialReg ? 'سجل تجاري: ' + settings.commercialReg : ''} ${settings.taxNumber ? ' &nbsp;|&nbsp; رقم ضريبي: ' + settings.taxNumber : ''}</p>`
+      : '';
+    const footerText = settings?.invoiceFooter || "شكراً لتعاملكم مع المثنى للأدوية";
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) return;
+
+    const itemsRows = sale.items
+      .map(
+        (item: InvoiceItem, i: number) => `
+        <tr>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${i + 1}</td>
+          <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: right;">${item.productName}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${item.batchNumber}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${item.qty}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${item.price.toLocaleString('en-US')}</td>
+          <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd;">${(item.qty * item.price).toLocaleString('en-US')}</td>
+        </tr>`
+      )
+      .join('');
+
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>تحميل فاتورة - ${sale.id}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+    @page { size: A4; margin: 15mm 12mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Tajawal', 'Segoe UI', 'Arial', sans-serif; background: #fff; color: #1e293b; line-height: 1.6; }
+    .invoice-container { max-width: 190mm; margin: 0 auto; padding: 10px 0; }
+    .invoice-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #10b981; padding-bottom: 16px; margin-bottom: 20px; }
+    .company-info { display: flex; align-items: center; gap: 15px; }
+    .company-info .logo-container { max-height: 70px; display: flex; align-items: center; }
+    .company-info .logo-container img { max-height: 70px; object-fit: contain; }
+    .company-info h1 { font-size: 22px; color: #065f46; margin: 0 0 4px 0; }
+    .company-info p { font-size: 12px; color: #64748b; margin: 0; }
+    .invoice-title { text-align: left; }
+    .invoice-title h2 { font-size: 26px; color: #10b981; letter-spacing: 1px; }
+    .invoice-title p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .meta-grid { display: flex; justify-content: space-between; background: #f1f5f9; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 13px; }
+    .meta-grid .col { display: flex; flex-direction: column; gap: 4px; }
+    .meta-grid .col span:first-child { color: #64748b; font-size: 11px; }
+    .meta-grid .col span:last-child { font-weight: 600; color: #1e293b; }
+    .status-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .status-PAID { background: #d1fae5; color: #065f46; }
+    .status-PARTIAL { background: #fef3c7; color: #92400e; }
+    .status-PENDING { background: #e2e8f0; color: #475569; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    table thead th { background: #10b981; color: #fff; font-size: 12px; font-weight: 600; padding: 10px 6px; border: none; }
+    table tbody tr:nth-child(even) { background: #f8fafc; }
+    .totals { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 24px; }
+    .totals .row { display: flex; justify-content: space-between; width: 260px; font-size: 14px; }
+    .totals .row.total { font-size: 17px; font-weight: 700; color: #065f46; border-top: 2px solid #10b981; padding-top: 6px; }
+    .invoice-footer { border-top: 2px solid #e2e8f0; padding-top: 14px; display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
+    .invoice-footer .stamp { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 6px 18px; font-size: 14px; font-weight: 700; color: #10b981; }
+  </style>
+</head>
+<body>
+  <div class="invoice-container" id="invoice-content">
+    <div class="invoice-header">
+      <div class="company-info">
+        ${companyLogoHtml}
+        <div>
+          <h1>${companyName}</h1>
+          <p>${companyAddress} &nbsp;|&nbsp; هاتف: ${companyPhone} ${companyEmail}</p>
+          ${regAndTaxHtml}
+        </div>
+      </div>
+      <div class="invoice-title">
+        <h2>فاتورة مبيعات</h2>
+        <p>${sale.id}</p>
+      </div>
+    </div>
+    <div class="meta-grid">
+      <div class="col"><span>العميل</span><span>${sale.customerName}</span></div>
+      <div class="col"><span>المندوب</span><span>${sale.representative ? `${sale.representative.name} (${sale.representative.commissionRate}%)` : 'بيع مباشر بدون عمولة'}</span></div>
+      <div class="col"><span>التاريخ</span><span>${new Date(sale.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</span></div>
+      <div class="col"><span>رقم الفاتورة</span><span style="direction: ltr; text-align: left;">${sale.id}</span></div>
+      <div class="col"><span>حالة الدفع</span><span class="status-badge status-${sale.status}">${statusLabel}</span></div>
+    </div>
+    <table>
+      <thead><tr><th style="width: 40px;">#</th><th>المنتج</th><th>رقم التشغيلة</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
+      <tbody>${itemsRows}</tbody>
+    </table>
+    <div class="totals">
+      <div class="row"><span>المدفوع:</span><span style="color: #10b981; font-weight: 600;">${paidLabel}</span></div>
+      <div class="row"><span>المتبقي:</span><span style="color: ${remaining > 0 ? '#e11d48' : '#10b981'}; font-weight: 600;">${remaining > 0 ? remaining.toLocaleString('en-US') + ' ' + currency : '---'}</span></div>
+      <div class="row total"><span>الإجمالي:</span><span>${sale.total.toLocaleString('en-US')} ${currency}</span></div>
+    </div>
+    <div class="invoice-footer">
+      <div><p>${footerText}</p><p>تم إصدار هذه الفاتورة إلكترونياً</p></div>
+      <div class="stamp">${companyName}</div>
+    </div>
+  </div>
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        var element = document.getElementById('invoice-content');
+        var opt = {
+          margin:       10,
+          filename:     'فاتورة_${sale.id}.pdf',
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        html2pdf().set(opt).from(element).save().then(function() {
+          setTimeout(function() { window.close(); }, 500);
+        });
+      }, 500);
+    };
+  </script>
 </body>
 </html>
     `);
@@ -1024,34 +1184,47 @@ export default function Sales() {
     printWindow.document.close();
   };
 
-  const openPaymentModal = (sale: Invoice) => {
+  const openPaymentModal = (sale: Invoice, defaultAmount?: number, installmentId?: string) => {
     const remaining = Math.max(0, sale.total - sale.paid);
     setPaymentModal({
       open: true,
       invoice: sale,
-      amount: remaining,
+      installmentId,
+      amount: defaultAmount !== undefined ? defaultAmount : remaining,
       loading: false,
     });
   };
 
   const closePaymentModal = () => {
-    setPaymentModal({ open: false, invoice: null, amount: 0, loading: false });
+    setPaymentModal({ open: false, invoice: null, installmentId: undefined, amount: 0, loading: false });
   };
 
   const handlePaymentSubmit = async () => {
-    const { invoice, amount } = paymentModal;
+    const { invoice, installmentId, amount } = paymentModal;
     if (!invoice || amount <= 0) return;
 
     setPaymentModal((prev) => ({ ...prev, loading: true }));
 
     try {
-      await apiClient.post(`/sales/${invoice.id}/pay`, { amount });
+      if (installmentId) {
+        await apiClient.post(`/sales/installments/${installmentId}/pay`, { amount });
+      } else {
+        await apiClient.post(`/sales/${invoice.id}/pay`, { amount });
+      }
+      
       useActivityStore.getState().logActivity(
         'تحصيل مبيعات',
         `تم استلام دفعة بقيمة ${amount.toLocaleString()} SDG للفاتورة رقم ${invoice.id} للعميل ${invoice.customerName}`
       );
+      
       // Reload sales from server
-      await loadSales();
+      const { data: updatedSales } = await apiClient.get<Invoice[]>('/sales');
+      setSales(updatedSales);
+      
+      if (selectedInvoice && selectedInvoice.id === invoice.id) {
+        const refreshedInvoice = updatedSales.find(s => s.id === invoice.id);
+        if (refreshedInvoice) setSelectedInvoice(refreshedInvoice);
+      }
     } catch (error) {
       console.error('Failed to submit payment:', error);
       alert('فشل في تسجيل الدفعة');
@@ -1084,6 +1257,7 @@ export default function Sales() {
         })),
         total: cartTotal,
         paid: paidAmount,
+        representativeId: selectedRepId || undefined,
         createdAt: new Date(invoiceDate).toISOString(),
         installments: usePaymentPlan ? installmentsPlan.map(i => ({
           dueDate: i.dueDate,
@@ -1106,7 +1280,13 @@ export default function Sales() {
       });
 
       // Reload sales from server
-      await loadSales();
+      const { data: updatedSales } = await apiClient.get<Invoice[]>('/sales');
+      setSales(updatedSales);
+      
+      const newInvoice = updatedSales.find(s => s.id === response.data.id);
+      if (newInvoice) {
+        setSelectedInvoice(newInvoice);
+      }
 
       clearCart();
       setPaidAmount(0);
@@ -1376,11 +1556,19 @@ export default function Sales() {
               )}
               
               <button
+                onClick={() => handleDownloadPDF(selectedInvoice)}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-2xl text-xs font-black transition-all hover:-translate-y-0.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>تحميل PDF</span>
+              </button>
+
+              <button
                 onClick={() => handlePrint(selectedInvoice)}
                 className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-2xl text-xs font-black transition-all hover:-translate-y-0.5"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>طباعة حرارية</span>
+                <span>طباعة</span>
               </button>
 
               {user?.role === 'ADMIN' && !isEditingInvoice && (
@@ -1623,10 +1811,16 @@ export default function Sales() {
                     <span>بيانات العميل والإصدار</span>
                   </div>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <div className="space-y-1">
                       <span className="text-[10px] font-bold text-[var(--text-secondary)]">الجهة / العميل</span>
                       <p className="font-black text-sm text-[var(--text-primary)]">{selectedInvoice.customerName}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--text-secondary)]">المندوب المسؤول</span>
+                      <p className="font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                        {selectedInvoice.representative ? `${selectedInvoice.representative.name} (${selectedInvoice.representative.commissionRate}%)` : 'بيع مباشر (مسؤول شركة)'}
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <span className="text-[10px] font-bold text-[var(--text-secondary)]">تاريخ الفاتورة</span>
@@ -1702,13 +1896,22 @@ export default function Sales() {
                           <div key={inst.id || idx} className="relative group text-right">
                             
                             {/* نقطة الخط الزمني المضيئة */}
-                            <div className={`absolute -right-[31px] top-1 w-4 h-4 rounded-full border-2 bg-[var(--bg-secondary)] transition-all duration-300 ${
-                              inst.status === 'PAID' ? 'border-emerald-500 ring-4 ring-emerald-500/10' :
-                              inst.status === 'PARTIAL' ? 'border-amber-500 ring-4 ring-amber-500/10' :
-                              'border-slate-300 dark:border-slate-700'
-                            }`} />
+                            <div className={`absolute -right-[31px] top-1 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                              inst.status === 'PAID' ? 'bg-emerald-500 border-emerald-500 ring-4 ring-emerald-500/10' :
+                              inst.status === 'PARTIAL' ? 'bg-[var(--bg-secondary)] border-amber-500 ring-4 ring-amber-500/10' :
+                              'bg-[var(--bg-secondary)] border-slate-300 dark:border-slate-700'
+                            }`}>
+                              {inst.status === 'PAID' && (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5 text-white">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                              )}
+                            </div>
 
-                            <div className="bg-[var(--bg-primary)]/40 hover:bg-[var(--bg-primary)] border border-[var(--border-color)]/70 hover:border-cyan-500/15 p-4 rounded-2xl transition-all duration-300 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div 
+                              className={`bg-[var(--bg-primary)]/40 hover:bg-[var(--bg-primary)] border border-[var(--border-color)]/70 hover:border-cyan-500/15 p-4 rounded-2xl transition-all duration-300 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${remaining > 0 ? 'cursor-pointer hover:shadow-md hover:scale-[1.01]' : 'opacity-80'}`}
+                              onClick={() => remaining > 0 && openPaymentModal(selectedInvoice, remaining, inst.id)}
+                            >
                               <div className="space-y-1.5">
                                 <div className="flex items-center gap-2">
                                   <span className="font-black text-xs text-[var(--text-primary)]">القسط #{idx + 1}</span>
@@ -2354,10 +2557,70 @@ export default function Sales() {
                   )}
                 </div>
                 {selectedCustomer && (
-                  <div className="mt-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
+                  <div className="mt-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)] space-y-2">
                     <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
                     <div>النوع: <strong>{selectedCustomer.type}</strong></div>
                     <div>الولاية: <strong>{selectedCustomer.state}</strong></div>
+                    <div className="pt-2 border-t border-[var(--border-color)]/60 space-y-1 text-right">
+                      <label className="block text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>المندوب المسؤول وعمولته:</span>
+                      </label>
+                      <div className="relative w-full mt-1">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={isRepDropdownOpen ? repSearch : (selectedRepId ? `${representatives.find(r => r.id === selectedRepId)?.name} (عمولة ${representatives.find(r => r.id === selectedRepId)?.commissionRate}%)` : 'بيع مباشر بدون عمولة')}
+                            placeholder="ابحث عن مندوب..."
+                            onFocus={() => {
+                              setRepSearch('');
+                              setIsRepDropdownOpen(true);
+                            }}
+                            onChange={(e) => {
+                              setRepSearch(e.target.value);
+                              setIsRepDropdownOpen(true);
+                            }}
+                            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-[var(--text-primary)] outline-none pr-8 text-right text-xs font-bold focus:border-emerald-500/50 cursor-pointer"
+                          />
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-[var(--text-secondary)]">
+                            <Search className="w-3.5 h-3.5" />
+                          </div>
+                          {isRepDropdownOpen && (
+                            <div className="absolute z-50 w-full mt-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] shadow-xl max-h-48 overflow-y-auto">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRepId('');
+                                  setIsRepDropdownOpen(false);
+                                }}
+                                className="w-full text-right px-3 py-2 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-xs font-bold transition-colors block border-b border-[var(--border-color)]/20"
+                              >
+                                بيع مباشر بدون عمولة
+                              </button>
+                              {representatives.filter(r => r.isActive && r.name.toLowerCase().includes(repSearch.toLowerCase())).map((r) => (
+                                <button
+                                  type="button"
+                                  key={r.id}
+                                  onClick={() => {
+                                    setSelectedRepId(r.id);
+                                    setIsRepDropdownOpen(false);
+                                  }}
+                                  className="w-full text-right px-3 py-2 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-xs transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                                >
+                                  {r.name} (عمولة {r.commissionRate}%)
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {isRepDropdownOpen && (
+                          <div 
+                            className="fixed inset-0 z-40 bg-transparent" 
+                            onClick={() => setIsRepDropdownOpen(false)} 
+                          />
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2645,10 +2908,72 @@ export default function Sales() {
                     )}
                   </div>
                   {selectedCustomer && (
-                    <div className="mt-4 rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
+                    <div className="mt-4 rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)] space-y-2">
                       <div className="mb-2">العميل المحدد: <strong className="text-[var(--text-primary)]">{selectedCustomer.name}</strong></div>
                       <div>النوع: <strong>{selectedCustomer.type}</strong></div>
                       <div>الولاية: <strong>{selectedCustomer.state}</strong></div>
+                      
+                      {/* Representative Selection Dropdown */}
+                      <div className="pt-2 border-t border-[var(--border-color)]/60 space-y-1 text-right">
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                          <Briefcase className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>المندوب المسؤول وعمولته:</span>
+                        </label>
+                        <div className="relative w-full mt-1">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={isRepDropdownOpen ? repSearch : (selectedRepId ? `${representatives.find(r => r.id === selectedRepId)?.name} (عمولة ${representatives.find(r => r.id === selectedRepId)?.commissionRate}%)` : 'بيع مباشر بدون عمولة')}
+                              placeholder="ابحث عن مندوب..."
+                              onFocus={() => {
+                                setRepSearch('');
+                                setIsRepDropdownOpen(true);
+                              }}
+                              onChange={(e) => {
+                                setRepSearch(e.target.value);
+                                setIsRepDropdownOpen(true);
+                              }}
+                              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-[var(--text-primary)] outline-none pr-8 text-right text-xs font-bold focus:border-emerald-500/50 cursor-pointer"
+                            />
+                            <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-[var(--text-secondary)]">
+                              <Search className="w-3.5 h-3.5" />
+                            </div>
+                            {isRepDropdownOpen && (
+                              <div className="absolute z-50 w-full mt-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] shadow-xl max-h-48 overflow-y-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedRepId('');
+                                    setIsRepDropdownOpen(false);
+                                  }}
+                                  className="w-full text-right px-3 py-2 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-xs font-bold transition-colors block border-b border-[var(--border-color)]/20"
+                                >
+                                  بيع مباشر بدون عمولة
+                                </button>
+                                {representatives.filter(r => r.isActive && r.name.toLowerCase().includes(repSearch.toLowerCase())).map((r) => (
+                                  <button
+                                    type="button"
+                                    key={r.id}
+                                    onClick={() => {
+                                      setSelectedRepId(r.id);
+                                      setIsRepDropdownOpen(false);
+                                    }}
+                                    className="w-full text-right px-3 py-2 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-xs transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                                  >
+                                    {r.name} (عمولة {r.commissionRate}%)
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {isRepDropdownOpen && (
+                            <div 
+                              className="fixed inset-0 z-40 bg-transparent" 
+                              onClick={() => setIsRepDropdownOpen(false)} 
+                            />
+                          )}
+                        </div>
+                      </div>
                  </div>
                )}
              </div>

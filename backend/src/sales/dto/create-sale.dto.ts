@@ -13,4 +13,5 @@ export class CreateSaleDto {
   paid: number;
   createdAt?: string;
   installments?: CreateInstallmentDto[];
+  representativeId?: string;
 }

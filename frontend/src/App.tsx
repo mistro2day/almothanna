@@ -5,6 +5,7 @@ import { useInventoryStore } from './store/useInventoryStore';
 import { useSalesStore } from './store/useSalesStore';
 import { useSupplierStore } from './store/useSupplierStore';
 import { useSettingsStore } from './store/useSettingsStore';
+import { useRepresentativesStore } from './store/useRepresentativesStore';
 
 
 // Views
@@ -67,12 +68,21 @@ export default function App() {
   const setCustomers = useSalesStore((state) => state.setCustomers);
   const fetchCustomers = useSalesStore((state) => state.fetchCustomers);
   const selectedInvoiceIdForDetails = useSalesStore((state) => state.selectedInvoiceIdForDetails);
+  const pendingView = useSalesStore((state) => state.pendingView);
+  const setPendingView = useSalesStore((state) => state.setPendingView);
 
   useEffect(() => {
     if (selectedInvoiceIdForDetails) {
       setActiveTab('sales');
     }
   }, [selectedInvoiceIdForDetails]);
+
+  useEffect(() => {
+    if (pendingView) {
+      setActiveTab(pendingView as ViewType);
+      setPendingView(null);
+    }
+  }, [pendingView]);
 
   const loadSuppliers = useSupplierStore((state) => state.loadLocalCache);
   const suppliers = useSupplierStore((state) => state.suppliers);
@@ -110,6 +120,7 @@ export default function App() {
     fetchPurchaseOrders();
     fetchPayments();
     fetchSettings();
+    useRepresentativesStore.getState().fetchRepresentatives();
     
     // ADMIN can fetch the list of managed users
     if (user.role === 'ADMIN') {
