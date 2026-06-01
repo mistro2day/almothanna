@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/apiClient';
+import DatePicker from '../components/DatePicker';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -188,20 +189,18 @@ export default function Reports() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs text-[var(--text-secondary)] font-semibold block">تاريخ البدء</label>
-              <input 
-                type="date" 
+              <DatePicker 
                 value={startDate} 
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-right"
+                onChange={setStartDate} 
+                placeholder="اختر تاريخ البداية" 
               />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-[var(--text-secondary)] font-semibold block">تاريخ النهاية</label>
-              <input 
-                type="date" 
+              <DatePicker 
                 value={endDate} 
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-right"
+                onChange={setEndDate} 
+                placeholder="اختر تاريخ النهاية" 
               />
             </div>
           </div>

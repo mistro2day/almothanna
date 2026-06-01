@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Delete, Param, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Post, Delete, Param, Patch, Put } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 
@@ -31,9 +31,27 @@ export class SalesController {
     return this.salesService.updateSaleDate(id, createdAt);
   }
 
+  @Put(':id/update-invoice')
+  async updateSaleAndInstallments(
+    @Param('id') id: string,
+    @Body() dto: { createdAt?: string; paid: number; installments?: any[] }
+  ) {
+    return this.salesService.updateSaleAndInstallments(id, dto);
+  }
+
   @Post(':id/pay')
   async paySale(@Param('id') id: string, @Body('amount') amount: number) {
     return this.salesService.paySale(id, amount);
+  }
+
+  @Get('installments')
+  async getInstallments() {
+    return this.salesService.listInstallments();
+  }
+
+  @Post('installments/:id/pay')
+  async payInstallment(@Param('id') id: string, @Body('amount') amount: number) {
+    return this.salesService.payInstallment(id, amount);
   }
 }
 

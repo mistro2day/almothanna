@@ -16,6 +16,7 @@ import Suppliers from './views/Suppliers';
 import Login from './views/Login';
 import SettingsView from './views/Settings';
 import Reports from './views/Reports';
+import InstallmentsCalendar from './views/Calendar';
 import NotificationsCenter from './components/NotificationsCenter';
 
 
@@ -36,10 +37,11 @@ import {
   Menu,
   X,
   Settings,
-  BarChart3
+  BarChart3,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 
-type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'settings' | 'reports';
+type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'settings' | 'reports' | 'calendar';
 
 export default function App() {
   const theme = useThemeStore((state) => state.theme);
@@ -64,6 +66,13 @@ export default function App() {
   const customers = useSalesStore((state) => state.customers);
   const setCustomers = useSalesStore((state) => state.setCustomers);
   const fetchCustomers = useSalesStore((state) => state.fetchCustomers);
+  const selectedInvoiceIdForDetails = useSalesStore((state) => state.selectedInvoiceIdForDetails);
+
+  useEffect(() => {
+    if (selectedInvoiceIdForDetails) {
+      setActiveTab('sales');
+    }
+  }, [selectedInvoiceIdForDetails]);
 
   const loadSuppliers = useSupplierStore((state) => state.loadLocalCache);
   const suppliers = useSupplierStore((state) => state.suppliers);
@@ -162,6 +171,7 @@ export default function App() {
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { id: 'inventory', label: 'المخزون الدوائي', icon: PackageSearch },
     { id: 'sales', label: 'إصدار الفواتير', icon: Receipt },
+    { id: 'calendar', label: 'تقويم الدفعات', icon: CalendarIcon },
     { id: 'customers', label: 'العملاء والشحن', icon: UsersRound },
     { id: 'suppliers', label: 'الموردين', icon: Building2 },
     { id: 'reports', label: 'التقارير الذكية', icon: BarChart3 },
@@ -174,6 +184,7 @@ export default function App() {
       case 'dashboard': return <Dashboard />;
       case 'inventory': return <Inventory />;
       case 'sales': return <Sales />;
+      case 'calendar': return <InstallmentsCalendar />;
       case 'customers': return <Customers />;
       case 'suppliers': return <Suppliers />;
       case 'reports': return <Reports />;

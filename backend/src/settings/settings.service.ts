@@ -25,21 +25,13 @@ export class SettingsService {
     return settings;
   }
 
-  async updateSettings(data: {
-    name: string;
-    phone: string;
-    email?: string;
-    address?: string;
-    logo?: string;
-    commercialReg?: string;
-    taxNumber?: string;
-    currency?: string;
-    invoiceFooter?: string;
-  }) {
+  async updateSettings(data: any) {
     const current = await this.getSettings();
+    // Exclude id and updatedAt from Prisma update payload to prevent primary key modification error
+    const { id, updatedAt, ...validData } = data;
     return this.prisma.companySettings.update({
       where: { id: current.id },
-      data,
+      data: validData,
     });
   }
 }

@@ -73,9 +73,18 @@ export class SalesService {
             price: item.price,
           })),
         },
+        installments: dto.installments && dto.installments.length > 0 ? {
+          create: dto.installments.map((inst) => ({
+            dueDate: new Date(inst.dueDate),
+            amount: inst.amount,
+            notes: inst.notes,
+            status: 'PENDING',
+          })),
+        } : undefined,
       },
       include: {
         customer: true,
+        installments: true,
         items: {
           include: {
             product: true,
@@ -120,12 +129,20 @@ export class SalesService {
       paid: sale.paid,
       status: sale.status,
       createdAt: sale.createdAt.toISOString(),
-      items: sale.items.map((item) => ({
+      items: sale.items.map((item: any) => ({
         productName: item.product.name,
         batchNumber: item.batch.batchNumber,
         qty: item.qty,
         price: item.price,
       })),
+      installments: (sale as any).installments?.map((inst: any) => ({
+        id: inst.id,
+        dueDate: inst.dueDate.toISOString(),
+        amount: inst.amount,
+        paidAmount: inst.paidAmount,
+        status: inst.status,
+        notes: inst.notes,
+      })) || [],
     };
   }
 
@@ -134,6 +151,7 @@ export class SalesService {
       orderBy: { createdAt: 'desc' },
       include: {
         customer: true,
+        installments: true,
         items: {
           include: {
             product: true,
@@ -156,12 +174,20 @@ export class SalesService {
         paid: sale.paid,
         status: sale.status,
         createdAt: sale.createdAt.toISOString(),
-        items: sale.items.map((item) => ({
+        items: sale.items.map((item: any) => ({
           productName: item.product.name,
           batchNumber: item.batch.batchNumber,
           qty: item.qty,
           price: item.price,
         })),
+        installments: (sale as any).installments?.map((inst: any) => ({
+          id: inst.id,
+          dueDate: inst.dueDate.toISOString(),
+          amount: inst.amount,
+          paidAmount: inst.paidAmount,
+          status: inst.status,
+          notes: inst.notes,
+        })) || [],
       };
     });
   }
@@ -225,6 +251,51 @@ export class SalesService {
     return this.prisma.sale.update({
       where: { id },
       data: { createdAt: new Date(createdAt) },
+    });
+  }
+
+  async updateSaleAndInstallments(id: string, dto: { createdAt?: string; paid: number; installments?: any[] }) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+    });
+    if (!sale) {
+      throw new NotFoundException('Sale not found');
+    }
+
+    const newPaid = dto.paid;
+    const status = newPaid >= sale.total ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update the sale details
+      const updatedSale = await tx.sale.update({
+        where: { id },
+        data: {
+          paid: newPaid,
+          status,
+          createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
+        },
+      });
+
+      // 2. Clear old installments
+      await tx.installment.deleteMany({
+        where: { saleId: id },
+      });
+
+      // 3. Insert newly scheduled installments
+      if (dto.installments && dto.installments.length > 0) {
+        await tx.installment.createMany({
+          data: dto.installments.map((inst: any) => ({
+            saleId: id,
+            dueDate: new Date(inst.dueDate),
+            amount: inst.amount,
+            paidAmount: inst.paidAmount || 0,
+            status: inst.paidAmount >= inst.amount ? 'PAID' : 'PENDING',
+            notes: inst.notes,
+          })),
+        });
+      }
+
+      return updatedSale;
     });
   }
 
@@ -336,5 +407,68 @@ export class SalesService {
       totalRevenue: Math.round(totalRevenue),
       totalProfit: Math.round(totalProfit),
     };
+  }
+
+  async payInstallment(id: string, amount: number) {
+    const installment = await this.prisma.installment.findUnique({
+      where: { id },
+      include: { sale: true },
+    });
+    if (!installment) {
+      throw new NotFoundException('Installment not found');
+    }
+    const newPaidAmount = installment.paidAmount + amount;
+    const remainingForInstallment = installment.amount - newPaidAmount;
+    const status = remainingForInstallment <= 0 ? 'PAID' : 'PARTIAL';
+
+    // Update the installment
+    const updatedInstallment = await this.prisma.installment.update({
+      where: { id },
+      data: {
+        paidAmount: newPaidAmount,
+        status,
+      },
+    });
+
+    // Also update the parent Sale paid amount
+    const sale = installment.sale;
+    const newSalePaid = sale.paid + amount;
+    const saleStatus = newSalePaid >= sale.total ? 'PAID' : newSalePaid > 0 ? 'PARTIAL' : 'PENDING';
+
+    await this.prisma.sale.update({
+      where: { id: sale.id },
+      data: {
+        paid: newSalePaid,
+        status: saleStatus,
+      },
+    });
+
+    return updatedInstallment;
+  }
+
+  async listInstallments() {
+    const installments = await this.prisma.installment.findMany({
+      include: {
+        sale: {
+          include: {
+            customer: true,
+          },
+        },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+    return installments.map((inst: any) => ({
+      id: inst.id,
+      saleId: inst.saleId,
+      customerName: inst.sale.customer.name,
+      customerPhone: inst.sale.customer.phone,
+      totalAmount: inst.sale.total,
+      paidAmountSale: inst.sale.paid,
+      dueDate: inst.dueDate.toISOString(),
+      amount: inst.amount,
+      paidAmount: inst.paidAmount,
+      status: inst.status,
+      notes: inst.notes,
+    }));
   }
 }

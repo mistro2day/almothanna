@@ -22,7 +22,9 @@ import {
   Download,
   Trash2,
   Edit3,
-  MoreVertical
+  MoreVertical,
+  ArrowRight,
+  Save
 } from 'lucide-react';
 import DatePicker from '../components/DatePicker';
 
@@ -33,6 +35,15 @@ interface InvoiceItem {
   price: number;
 }
 
+interface InvoiceInstallment {
+  id: string;
+  dueDate: string;
+  amount: number;
+  paidAmount: number;
+  status: string;
+  notes?: string;
+}
+
 interface Invoice {
   id: string;
   customerName: string;
@@ -41,6 +52,7 @@ interface Invoice {
   status: 'PENDING' | 'PAID' | 'PARTIAL';
   createdAt: string;
   items: InvoiceItem[];
+  installments?: InvoiceInstallment[];
 }
 
 type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers';
@@ -126,6 +138,35 @@ export default function Sales() {
   // Advanced features state variables
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const [invoiceDate, setInvoiceDate] = useState(getTodayStr());
+  const [usePaymentPlan, setUsePaymentPlan] = useState(false);
+  const [installmentsPlan, setInstallmentsPlan] = useState<{ dueDate: string; amount: string | number; notes: string }[]>([]);
+
+  const parseDigits = (val: any): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    const str = String(val);
+    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    const englishStr = str.replace(/[٠-٩]/g, (w) => String(arabicDigits.indexOf(w)));
+    return Number(englishStr) || 0;
+  };
+
+  const addInstallmentToPlan = () => {
+    const remaining = Math.max(0, cartTotal - paidAmount) - installmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0);
+    setInstallmentsPlan([
+      ...installmentsPlan,
+      { dueDate: getTodayStr(), amount: remaining > 0 ? remaining : '', notes: '' }
+    ]);
+  };
+
+  const removeInstallmentFromPlan = (index: number) => {
+    setInstallmentsPlan(installmentsPlan.filter((_, i) => i !== index));
+  };
+
+  const updateInstallmentInPlan = (index: number, key: 'dueDate' | 'amount' | 'notes', value: any) => {
+    setInstallmentsPlan(
+      installmentsPlan.map((inst, i) => (i === index ? { ...inst, [key]: value } : inst))
+    );
+  };
+
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [filterCustomerName, setFilterCustomerName] = useState('');
@@ -133,6 +174,87 @@ export default function Sales() {
   const [isFilterCustomerDropdownOpen, setIsFilterCustomerDropdownOpen] = useState(false);
   const [filterPaymentStatus, setFilterPaymentStatus] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const selectedInvoiceIdForDetails = useSalesStore((state) => state.selectedInvoiceIdForDetails);
+  const setSelectedInvoiceIdForDetails = useSalesStore((state) => state.setSelectedInvoiceIdForDetails);
+
+  useEffect(() => {
+    if (selectedInvoiceIdForDetails && sales.length > 0) {
+      const matched = sales.find(s => s.id === selectedInvoiceIdForDetails);
+      if (matched) {
+        setSelectedInvoice(matched);
+        setSelectedInvoiceIdForDetails(null); // Reset global bridging state
+      }
+    }
+  }, [selectedInvoiceIdForDetails, sales, setSelectedInvoiceIdForDetails]);
+
+  // Invoice edit mode states
+  const [isEditingInvoice, setIsEditingInvoice] = useState(false);
+  const [editInvoicePaid, setEditInvoicePaid] = useState(0);
+  const [editInvoiceDate, setEditInvoiceDate] = useState('');
+  const [editInstallmentsPlan, setEditInstallmentsPlan] = useState<{ dueDate: string; amount: string | number; notes: string }[]>([]);
+
+  const addInstallmentToEditPlan = () => {
+    if (!selectedInvoice) return;
+    const remaining = Math.max(0, selectedInvoice.total - editInvoicePaid) - editInstallmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0);
+    setEditInstallmentsPlan([
+      ...editInstallmentsPlan,
+      { dueDate: getTodayStr(), amount: remaining > 0 ? remaining : '', notes: '' }
+    ]);
+  };
+
+  const removeInstallmentFromEditPlan = (index: number) => {
+    setEditInstallmentsPlan(editInstallmentsPlan.filter((_, i) => i !== index));
+  };
+
+  const updateInstallmentInEditPlan = (index: number, key: 'dueDate' | 'amount' | 'notes', value: any) => {
+    setEditInstallmentsPlan(
+      editInstallmentsPlan.map((inst, i) => (i === index ? { ...inst, [key]: value } : inst))
+    );
+  };
+
+  const handleSaveInvoiceUpdate = async () => {
+    if (!selectedInvoice) return;
+    
+    const remainingAmount = selectedInvoice.total - editInvoicePaid;
+    const installmentsTotal = editInstallmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0);
+    
+    if (editInstallmentsPlan.length > 0 && Math.abs(remainingAmount - installmentsTotal) > 0.01) {
+      alert('مجموع مبالغ الأقساط يجب أن يساوي المبلغ المتبقي تماماً!');
+      return;
+    }
+    
+    try {
+      setIsSubmitting(true);
+      await apiClient.put(`/sales/${selectedInvoice.id}/update-invoice`, {
+        createdAt: new Date(editInvoiceDate).toISOString(),
+        paid: editInvoicePaid,
+        installments: editInstallmentsPlan.map(i => ({
+          dueDate: i.dueDate,
+          amount: parseDigits(i.amount),
+          notes: i.notes
+        }))
+      });
+      
+      alert('تم تعديل الفاتورة وجدولة الأقساط بنجاح!');
+      setIsEditingInvoice(false);
+      // Reload sales from server
+      const { data } = await apiClient.get<Invoice[]>('/sales');
+      setSales(data);
+      
+      const updated = data.find(s => s.id === selectedInvoice.id);
+      if (updated) {
+        setSelectedInvoice(updated);
+      } else {
+        setSelectedInvoice(null);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('فشل في حفظ التعديلات');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; invoiceId: string | null; loading: boolean }>({
     open: false,
     invoiceId: null,
@@ -265,10 +387,10 @@ export default function Sales() {
     const companyEmail = settings?.email ? ` &nbsp;|&nbsp; البريد: ${settings.email}` : "";
     const companyAddress = settings?.address || "السودان - أمدرمان";
     const companyLogoHtml = settings?.logo 
-      ? `<img src="${settings.logo}" style="max-height: 60px; object-contain: fit; margin-bottom: 6px;" />` 
-      : `<h1>${companyName}</h1>`;
+      ? `<div class="logo-container"><img src="${settings.logo}" /></div>` 
+      : '';
     const regAndTaxHtml = (settings?.commercialReg || settings?.taxNumber)
-      ? `<p style="font-size: 11px; color: #64748b;">${settings.commercialReg ? 'سجل تجاري: ' + settings.commercialReg : ''} ${settings.taxNumber ? ' &nbsp;|&nbsp; رقم ضريبي: ' + settings.taxNumber : ''}</p>`
+      ? `<p style="font-size: 11px; color: #64748b; margin-top: 4px;">${settings.commercialReg ? 'سجل تجاري: ' + settings.commercialReg : ''} ${settings.taxNumber ? ' &nbsp;|&nbsp; رقم ضريبي: ' + settings.taxNumber : ''}</p>`
       : '';
     const footerText = settings?.invoiceFooter || "شكراً لتعاملكم مع المثنى للأدوية";
 
@@ -301,8 +423,11 @@ export default function Sales() {
     body { font-family: 'Segoe UI', 'Arial', sans-serif; background: #fff; color: #1e293b; line-height: 1.6; }
     .invoice-container { max-width: 190mm; margin: 0 auto; padding: 10px 0; }
     .invoice-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #10b981; padding-bottom: 16px; margin-bottom: 20px; }
-    .company-info h1 { font-size: 22px; color: #065f46; margin-bottom: 4px; }
-    .company-info p { font-size: 12px; color: #64748b; }
+    .company-info { display: flex; align-items: center; gap: 15px; }
+    .company-info .logo-container { max-height: 70px; display: flex; align-items: center; }
+    .company-info .logo-container img { max-height: 70px; object-fit: contain; }
+    .company-info h1 { font-size: 22px; color: #065f46; margin: 0 0 4px 0; }
+    .company-info p { font-size: 12px; color: #64748b; margin: 0; }
     .invoice-title { text-align: left; }
     .invoice-title h2 { font-size: 26px; color: #10b981; letter-spacing: 1px; }
     .invoice-title p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
@@ -330,9 +455,11 @@ export default function Sales() {
     <div class="invoice-header">
       <div class="company-info">
         ${companyLogoHtml}
-        <h1 style="font-size: 20px; color: #065f46; margin: 4px 0;">${companyName}</h1>
-        <p>${companyAddress} &nbsp;|&nbsp; هاتف: ${companyPhone} ${companyEmail}</p>
-        ${regAndTaxHtml}
+        <div>
+          <h1>${companyName}</h1>
+          <p>${companyAddress} &nbsp;|&nbsp; هاتف: ${companyPhone} ${companyEmail}</p>
+          ${regAndTaxHtml}
+        </div>
       </div>
       <div class="invoice-title">
         <h2>فاتورة مبيعات</h2>
@@ -507,6 +634,15 @@ export default function Sales() {
   const handleCheckout = async () => {
     if (!selectedCustomerId || cart.length === 0 || isSubmitting) return;
 
+    if (usePaymentPlan) {
+      const remainingAmount = cartTotal - paidAmount;
+      const installmentsTotal = installmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0);
+      if (Math.abs(remainingAmount - installmentsTotal) > 0.01) {
+        alert('مجموع مبالغ الأقساط يجب أن يساوي المبلغ المتبقي تماماً!');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const response = await apiClient.post<Invoice>('/sales/offline', {
@@ -520,6 +656,11 @@ export default function Sales() {
         total: cartTotal,
         paid: paidAmount,
         createdAt: new Date(invoiceDate).toISOString(),
+        installments: usePaymentPlan ? installmentsPlan.map(i => ({
+          dueDate: i.dueDate,
+          amount: parseDigits(i.amount),
+          notes: i.notes
+        })) : undefined,
       });
 
       setInvoiceNumber(response.data.id);
@@ -542,6 +683,8 @@ export default function Sales() {
       setPaidAmount(0);
       setSelectedCustomerId('');
       setInvoiceDate(getTodayStr()); // Reset to today's date
+      setUsePaymentPlan(false);
+      setInstallmentsPlan([]);
       setIssuingInvoice(false);
 
       setTimeout(() => {
@@ -552,6 +695,38 @@ export default function Sales() {
       alert('فشل في إصدار الفاتورة');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteSale = async () => {
+    if (!deleteConfirm.invoiceId) return;
+    setDeleteConfirm((prev) => ({ ...prev, loading: true }));
+    try {
+      await apiClient.delete(`/sales/${deleteConfirm.invoiceId}`);
+      await loadSales();
+      setDeleteConfirm({ open: false, invoiceId: null, loading: false });
+      setSelectedInvoice(null);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في حذف الفاتورة');
+      setDeleteConfirm((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleUpdateInvoiceDate = async (invoiceId: string, newDateStr: string) => {
+    try {
+      await apiClient.patch(`/sales/${invoiceId}`, { createdAt: new Date(newDateStr).toISOString() });
+      await loadSales();
+      setIsEditingDate(false);
+      if (selectedInvoice && selectedInvoice.id === invoiceId) {
+        setSelectedInvoice({
+          ...selectedInvoice,
+          createdAt: new Date(newDateStr).toISOString(),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to update date:', err);
+      alert('فشل في تعديل تاريخ الفاتورة');
     }
   };
 
@@ -644,7 +819,425 @@ export default function Sales() {
         </div>
       )}
 
-      {!issuingInvoice ? (
+      {selectedInvoice ? (
+        /* ====== INVOICE DETAIL FULL PAGE ====== */
+        <div className="space-y-6 animate-fade-in-slide">
+          {/* Detail Page Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setSelectedInvoice(null); setIsEditingInvoice(false); setIsEditingDate(false); }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-2xl font-semibold transition-colors"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>العودة للفواتير</span>
+              </button>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-[var(--text-primary)]">تفاصيل الفاتورة</h1>
+                <p className="text-xs text-[var(--text-secondary)] font-mono mt-0.5">{selectedInvoice.id}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-2 bg-[var(--bg-secondary)] p-3 sm:p-4 rounded-2xl border border-[var(--border-color)]">
+            <span className="text-xs font-bold text-[var(--text-secondary)] w-full mb-1">إجراءات الفاتورة:</span>
+            {!isEditingInvoice && (
+              <button
+                onClick={() => {
+                  setIsEditingInvoice(true);
+                  setEditInvoicePaid(selectedInvoice.paid);
+                  setEditInvoiceDate(selectedInvoice.createdAt.split('T')[0]);
+                  setEditInstallmentsPlan(
+                    selectedInvoice.installments?.map(inst => ({
+                      dueDate: inst.dueDate.split('T')[0],
+                      amount: inst.amount,
+                      notes: inst.notes || ''
+                    })) || []
+                  );
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>تعديل الفاتورة والأقساط</span>
+              </button>
+            )}
+            {user?.role === 'ADMIN' && !isEditingInvoice && (
+              <button
+                onClick={() => {
+                  setEditDateValue(selectedInvoice.createdAt.split('T')[0]);
+                  setIsEditingDate(!isEditingDate);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>تعديل التاريخ</span>
+              </button>
+            )}
+            {selectedInvoice.status !== 'PAID' && !isEditingInvoice && (
+              <button
+                onClick={() => openPaymentModal(selectedInvoice)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <DollarSign className="w-4 h-4" />
+                <span>سداد دفعة</span>
+              </button>
+            )}
+            <button
+              onClick={() => handlePrint(selectedInvoice)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>طباعة الفاتورة</span>
+            </button>
+            <button
+              onClick={() => handlePrint(selectedInvoice)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-500/10 hover:bg-teal-500/20 text-teal-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>تصدير PDF</span>
+            </button>
+            {user?.role === 'ADMIN' && !isEditingInvoice && (
+              <button
+                onClick={() => setDeleteConfirm({ open: true, invoiceId: selectedInvoice.id, loading: false })}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer sm:mr-auto"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف الفاتورة</span>
+              </button>
+            )}
+          </div>
+
+          {/* Inline Date Editor */}
+          {isEditingDate && !isEditingInvoice && (
+            <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-3">
+              <p className="text-xs font-bold text-amber-600">تغيير تاريخ إصدار الفاتورة لوقت سابق أو تاريخ محدد:</p>
+              <div className="flex gap-2 items-center">
+                <div className="flex-1">
+                  <DatePicker value={editDateValue} onChange={setEditDateValue} />
+                </div>
+                <button
+                  onClick={() => handleUpdateInvoiceDate(selectedInvoice.id, editDateValue)}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  حفظ التعديل
+                </button>
+                <button
+                  onClick={() => setIsEditingDate(false)}
+                  className="px-4 py-2.5 bg-[var(--border-color)] text-[var(--text-primary)] rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Mode */}
+          {isEditingInvoice ? (
+            <div className="space-y-6">
+              <div className="glass-card p-5 sm:p-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.02] space-y-5">
+                <div className="flex items-center gap-2 text-cyan-500 font-bold text-sm border-b border-[var(--border-color)] pb-3">
+                  <Edit3 className="w-5 h-5" />
+                  <span>وضع التعديل - تعديل الفاتورة وجدولة الأقساط</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-[var(--text-secondary)]">تاريخ الفاتورة</label>
+                    <DatePicker value={editInvoiceDate} onChange={setEditInvoiceDate} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-[var(--text-secondary)]">المبلغ المدفوع (SDG)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={editInvoicePaid}
+                      onChange={(e) => setEditInvoicePaid(Number(e.target.value))}
+                      className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none focus:border-cyan-500/50 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Financial summary in edit mode */}
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div className="p-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-center">
+                    <p className="text-xs text-[var(--text-secondary)] mb-1">الإجمالي</p>
+                    <p className="font-bold text-[var(--text-primary)]">{selectedInvoice.total.toLocaleString('en-US')} SDG</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-center">
+                    <p className="text-xs text-[var(--text-secondary)] mb-1">المدفوع</p>
+                    <p className="font-bold text-emerald-500">{editInvoicePaid.toLocaleString('en-US')} SDG</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-rose-500/5 border border-rose-500/20 text-center">
+                    <p className="text-xs text-[var(--text-secondary)] mb-1">المتبقي</p>
+                    <p className="font-bold text-rose-500">{Math.max(0, selectedInvoice.total - editInvoicePaid).toLocaleString('en-US')} SDG</p>
+                  </div>
+                </div>
+
+                {/* Installments Scheduling */}
+                {selectedInvoice.total - editInvoicePaid > 0 && (
+                  <div className="space-y-4 border-t border-[var(--border-color)] pt-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-bold text-[var(--text-primary)]">جدول الأقساط والدفعات</span>
+                      <button
+                        type="button"
+                        onClick={addInstallmentToEditPlan}
+                        className="text-sm text-cyan-500 font-extrabold hover:underline cursor-pointer"
+                      >
+                        + إضافة دفعة
+                      </button>
+                    </div>
+
+                    {editInstallmentsPlan.length === 0 && (
+                      <div className="rounded-2xl border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-secondary)]">
+                        لم تُجدوَل أي أقساط بعد. اضغط "إضافة دفعة" لبدء الجدولة.
+                      </div>
+                    )}
+
+                    {editInstallmentsPlan.map((inst, idx) => (
+                      <div key={idx} className="p-4 bg-[var(--bg-primary)]/40 rounded-xl border border-[var(--border-color)]/70 space-y-3 text-sm">
+                        <div className="flex justify-between items-center border-b border-[var(--border-color)]/30 pb-2">
+                          <span className="font-bold text-[var(--text-primary)]">الدفعة #{idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeInstallmentFromEditPlan(idx)}
+                            className="text-rose-500 hover:underline cursor-pointer font-bold text-xs"
+                          >
+                            حذف
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-bold text-[var(--text-secondary)] block mb-1">تاريخ الاستحقاق</label>
+                            <DatePicker
+                              value={inst.dueDate}
+                              onChange={(val) => updateInstallmentInEditPlan(idx, 'dueDate', val)}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-[var(--text-secondary)] block mb-1">المبلغ (SDG)</label>
+                            <input
+                              type="text"
+                              value={inst.amount}
+                              onChange={(e) => updateInstallmentInEditPlan(idx, 'amount', e.target.value)}
+                              className="w-full p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black text-center outline-none focus:border-cyan-500/50"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-[var(--text-secondary)] block mb-1">ملاحظات الدفعة</label>
+                          <input
+                            type="text"
+                            value={inst.notes}
+                            placeholder="مثلاً: دفعة بشيك أو نقداً"
+                            onChange={(e) => updateInstallmentInEditPlan(idx, 'notes', e.target.value)}
+                            className="w-full p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm"
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    {editInstallmentsPlan.length > 0 && (
+                      <div className="text-sm text-right text-amber-500 font-extrabold bg-amber-500/10 p-3 rounded-lg border border-amber-500/25">
+                        مجموع الدفعات المجدولة: {editInstallmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0).toLocaleString()} SDG
+                        {Math.abs((selectedInvoice.total - editInvoicePaid) - editInstallmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0)) > 0.01 && (
+                          <span className="block text-[11px] text-rose-500 mt-1.5 font-bold">يجب أن يطابق المتبقي: {(selectedInvoice.total - editInvoicePaid).toLocaleString()} SDG</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Save / Cancel Buttons */}
+                <div className="flex gap-3 pt-3 border-t border-[var(--border-color)]">
+                  <button
+                    onClick={handleSaveInvoiceUpdate}
+                    disabled={isSubmitting}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-2xl font-bold transition-colors disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>حفظ التعديلات</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setIsEditingInvoice(false)}
+                    className="px-5 py-3 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-2xl font-bold transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* View Mode (Read-only Invoice Details) */
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Main Content */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Invoice Info */}
+                <div className="glass-card p-5 sm:p-6 rounded-2xl border border-[var(--glass-border)]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div className="space-y-1">
+                      <span className="text-xs text-[var(--text-secondary)]">العميل</span>
+                      <p className="font-bold text-[var(--text-primary)]">{selectedInvoice.customerName}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-[var(--text-secondary)]">تاريخ الإصدار</span>
+                      <p className="font-mono font-bold text-[var(--text-primary)]">
+                        {new Date(selectedInvoice.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-[var(--text-secondary)]">رقم الفاتورة</span>
+                      <p className="font-mono font-bold text-[var(--text-primary)]">{selectedInvoice.id}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-[var(--text-secondary)]">حالة الدفع</span>
+                      <p>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          selectedInvoice.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' :
+                          selectedInvoice.status === 'PARTIAL' ? 'bg-amber-500/10 text-amber-500' :
+                          'bg-gray-500/10 text-gray-500'
+                        }`}>
+                          {selectedInvoice.status === 'PAID' ? 'مدفوع' : selectedInvoice.status === 'PARTIAL' ? 'جزئي' : 'معلق'}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Items Table */}
+                <div className="glass-card rounded-2xl border border-[var(--glass-border)] overflow-hidden">
+                  <div className="p-4 border-b border-[var(--border-color)]">
+                    <h3 className="text-sm font-bold text-[var(--text-primary)]">عناصر الفاتورة</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="bg-[var(--bg-primary)] border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                          <th className="p-3">#</th>
+                          <th className="p-3">اسم المنتج</th>
+                          <th className="p-3 text-center">التشغيلة</th>
+                          <th className="p-3 text-center">الكمية</th>
+                          <th className="p-3 text-center">سعر الوحدة</th>
+                          <th className="p-3 text-left">الإجمالي</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border-color)]">
+                        {selectedInvoice.items.map((item, idx) => (
+                          <tr key={idx} className="text-[var(--text-primary)]">
+                            <td className="p-3 font-mono">{idx + 1}</td>
+                            <td className="p-3 font-semibold">{item.productName}</td>
+                            <td className="p-3 text-center font-mono text-[var(--text-secondary)]">{item.batchNumber}</td>
+                            <td className="p-3 text-center font-bold font-mono">{item.qty}</td>
+                            <td className="p-3 text-center font-mono">{item.price.toLocaleString('en-US')} SDG</td>
+                            <td className="p-3 text-left font-bold font-mono">{(item.qty * item.price).toLocaleString('en-US')} SDG</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Installments Table (if any) */}
+                {selectedInvoice.installments && selectedInvoice.installments.length > 0 && (
+                  <div className="glass-card rounded-2xl border border-[var(--glass-border)] overflow-hidden">
+                    <div className="p-4 border-b border-[var(--border-color)] flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-cyan-500" />
+                      <h3 className="text-sm font-bold text-[var(--text-primary)]">جدول الأقساط والدفعات</h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="bg-[var(--bg-primary)] border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                            <th className="p-3">#</th>
+                            <th className="p-3">تاريخ الاستحقاق</th>
+                            <th className="p-3 text-center">المبلغ</th>
+                            <th className="p-3 text-center">المدفوع</th>
+                            <th className="p-3 text-center">الحالة</th>
+                            <th className="p-3">ملاحظات</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border-color)]">
+                          {selectedInvoice.installments.map((inst, idx) => (
+                            <tr key={inst.id || idx} className="text-[var(--text-primary)]">
+                              <td className="p-3 font-mono">{idx + 1}</td>
+                              <td className="p-3 font-mono">{new Date(inst.dueDate).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                              <td className="p-3 text-center font-bold">{inst.amount.toLocaleString('en-US')} SDG</td>
+                              <td className="p-3 text-center font-bold text-emerald-500">{inst.paidAmount.toLocaleString('en-US')} SDG</td>
+                              <td className="p-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  inst.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' :
+                                  inst.status === 'PARTIAL' ? 'bg-amber-500/10 text-amber-500' :
+                                  'bg-gray-500/10 text-gray-500'
+                                }`}>
+                                  {inst.status === 'PAID' ? 'مدفوع' : inst.status === 'PARTIAL' ? 'جزئي' : 'معلق'}
+                                </span>
+                              </td>
+                              <td className="p-3 text-[var(--text-secondary)] text-xs">{inst.notes || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sidebar: Financial Summary */}
+              <div className="space-y-6">
+                <div className="glass-card rounded-2xl border border-[var(--glass-border)] p-5 space-y-3 text-sm sticky top-6">
+                  <h3 className="font-bold text-[var(--text-primary)] text-base mb-3 flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-emerald-500" />
+                    الملخص المالي
+                  </h3>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-secondary)]">إجمالي الفاتورة</span>
+                    <span className="font-bold text-[var(--text-primary)]">{selectedInvoice.total.toLocaleString('en-US')} SDG</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-secondary)]">المبلغ المسدد</span>
+                    <span className="font-bold text-emerald-500">{selectedInvoice.paid.toLocaleString('en-US')} SDG</span>
+                  </div>
+                  <div className="flex justify-between border-t border-[var(--border-color)] pt-3">
+                    <span className="font-bold text-[var(--text-secondary)]">المتبقي المستحق</span>
+                    <span className="font-bold text-rose-500">{Math.max(0, selectedInvoice.total - selectedInvoice.paid).toLocaleString('en-US')} SDG</span>
+                  </div>
+
+                  {/* Payment progress bar */}
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                      <span>نسبة السداد</span>
+                      <span>{selectedInvoice.total > 0 ? Math.round((selectedInvoice.paid / selectedInvoice.total) * 100) : 0}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-[var(--border-color)] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-l from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
+                        style={{ width: `${selectedInvoice.total > 0 ? Math.min(100, (selectedInvoice.paid / selectedInvoice.total) * 100) : 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {selectedInvoice.status !== 'PAID' && (
+                    <button
+                      onClick={() => openPaymentModal(selectedInvoice)}
+                      className="w-full mt-4 inline-flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold transition-colors"
+                    >
+                      <DollarSign className="w-4 h-4" />
+                      <span>تسجيل دفعة جديدة</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : !issuingInvoice ? (
         <div className="space-y-6">
           {/* Page Header */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -1146,8 +1739,91 @@ export default function Sales() {
                 </div>
                 <div className="space-y-1.5 text-right">
                   <label className="block text-xs font-semibold text-[var(--text-secondary)]">المبلغ المدفوع</label>
-                  <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} placeholder="المبلغ المدفوع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
+                  <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => { setPaidAmount(Number(e.target.value)); setUsePaymentPlan(false); setInstallmentsPlan([]); }} placeholder="المبلغ المدفوع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
                 </div>
+                {cartTotal - paidAmount > 0 && (
+                  <div className="space-y-4 border-t border-[var(--border-color)] pt-4 text-right">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm sm:text-base font-bold text-[var(--text-primary)]">تفعيل خطة سداد بالأقساط</span>
+                      <input
+                        type="checkbox"
+                        checked={usePaymentPlan}
+                        onChange={(e) => {
+                          setUsePaymentPlan(e.target.checked);
+                          if (e.target.checked && installmentsPlan.length === 0) {
+                            setInstallmentsPlan([{ dueDate: getTodayStr(), amount: cartTotal - paidAmount, notes: '' }]);
+                          }
+                        }}
+                        className="w-5 h-5 text-emerald-600 border-[var(--border-color)] rounded focus:ring-emerald-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {usePaymentPlan && (
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-bold text-[var(--text-secondary)]">جدول الدفعات</span>
+                          <button
+                            type="button"
+                            onClick={addInstallmentToPlan}
+                            className="text-sm text-emerald-500 font-extrabold hover:underline cursor-pointer"
+                          >
+                            + إضافة دفعة
+                          </button>
+                        </div>
+                        {installmentsPlan.map((inst, idx) => (
+                          <div key={idx} className="p-4 bg-[var(--bg-primary)]/40 rounded-xl border border-[var(--border-color)]/70 space-y-3 text-sm">
+                            <div className="flex justify-between items-center border-b border-[var(--border-color)]/30 pb-2">
+                              <span className="font-bold text-[var(--text-primary)] text-sm sm:text-base">الدفعة #{idx + 1}</span>
+                              {installmentsPlan.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeInstallmentFromPlan(idx)}
+                                  className="text-rose-500 hover:underline cursor-pointer font-bold text-xs"
+                                >
+                                  حذف
+                                </button>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs sm:text-sm font-bold text-[var(--text-secondary)] block mb-1">تاريخ الاستحقاق</label>
+                                <DatePicker
+                                  value={inst.dueDate}
+                                  onChange={(val) => updateInstallmentInPlan(idx, 'dueDate', val)}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs sm:text-sm font-bold text-[var(--text-secondary)] block mb-1">المبلغ (SDG)</label>
+                                <input
+                                  type="text"
+                                  value={inst.amount}
+                                  onChange={(e) => updateInstallmentInPlan(idx, 'amount', e.target.value)}
+                                  className="w-full p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black text-center text-sm sm:text-base outline-none focus:border-emerald-500/50"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs sm:text-sm font-bold text-[var(--text-secondary)] block mb-1">ملاحظات الدفعة</label>
+                              <input
+                                type="text"
+                                value={inst.notes}
+                                placeholder="مثلاً: دفعة بشيك أو نقداً"
+                                onChange={(e) => updateInstallmentInPlan(idx, 'notes', e.target.value)}
+                                className="w-full p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        <div className="text-xs sm:text-sm text-right text-amber-500 font-extrabold bg-amber-500/10 p-3 rounded-lg border border-amber-500/25">
+                          مجموع الدفعات المجدولة: {installmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0).toLocaleString()} SDG
+                          {Math.abs((cartTotal - paidAmount) - installmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0)) > 0.01 && (
+                            <span className="block text-[11px] text-rose-500 mt-1.5 font-bold">يجب أن يطابق المتبقي: {(cartTotal - paidAmount).toLocaleString()} SDG</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <button 
                   onClick={handleCheckout} 
                   disabled={!selectedCustomerId || cart.length === 0 || isSubmitting} 
@@ -1365,8 +2041,91 @@ export default function Sales() {
                   </div>
                   <div className="space-y-2 text-sm text-right">
                     <label className="block text-[var(--text-secondary)] font-semibold">المبلغ المدفوع</label>
-                    <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
+                    <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => { setPaidAmount(Number(e.target.value)); setUsePaymentPlan(false); setInstallmentsPlan([]); }} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
                   </div>
+                  {cartTotal - paidAmount > 0 && (
+                    <div className="space-y-4 border-t border-[var(--border-color)] pt-4 text-right">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm sm:text-base font-bold text-[var(--text-primary)]">تفعيل خطة سداد بالأقساط</span>
+                        <input
+                          type="checkbox"
+                          checked={usePaymentPlan}
+                          onChange={(e) => {
+                            setUsePaymentPlan(e.target.checked);
+                            if (e.target.checked && installmentsPlan.length === 0) {
+                              setInstallmentsPlan([{ dueDate: getTodayStr(), amount: cartTotal - paidAmount, notes: '' }]);
+                            }
+                          }}
+                          className="w-5 h-5 text-emerald-600 border-[var(--border-color)] rounded focus:ring-emerald-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {usePaymentPlan && (
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm font-bold text-[var(--text-secondary)]">جدول الدفعات</span>
+                            <button
+                              type="button"
+                              onClick={addInstallmentToPlan}
+                              className="text-sm text-emerald-500 font-extrabold hover:underline cursor-pointer"
+                            >
+                              + إضافة دفعة
+                            </button>
+                          </div>
+                          {installmentsPlan.map((inst, idx) => (
+                            <div key={idx} className="p-4 bg-[var(--bg-primary)]/40 rounded-xl border border-[var(--border-color)]/70 space-y-3 text-sm">
+                              <div className="flex justify-between items-center border-b border-[var(--border-color)]/30 pb-2">
+                                <span className="font-bold text-[var(--text-primary)] text-sm sm:text-base">الدفعة #{idx + 1}</span>
+                                {installmentsPlan.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeInstallmentFromPlan(idx)}
+                                    className="text-rose-500 hover:underline cursor-pointer font-bold text-xs"
+                                  >
+                                    حذف
+                                  </button>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-xs sm:text-sm font-bold text-[var(--text-secondary)] block mb-1">تاريخ الاستحقاق</label>
+                                  <DatePicker
+                                    value={inst.dueDate}
+                                    onChange={(val) => updateInstallmentInPlan(idx, 'dueDate', val)}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs sm:text-sm font-bold text-[var(--text-secondary)] block mb-1">المبلغ (SDG)</label>
+                                  <input
+                                    type="text"
+                                    value={inst.amount}
+                                    onChange={(e) => updateInstallmentInPlan(idx, 'amount', e.target.value)}
+                                    className="w-full p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black text-center text-sm sm:text-base outline-none focus:border-emerald-500/50"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-xs sm:text-sm font-bold text-[var(--text-secondary)] block mb-1">ملاحظات الدفعة</label>
+                                <input
+                                  type="text"
+                                  value={inst.notes}
+                                  placeholder="مثلاً: دفعة بشيك أو نقداً"
+                                  onChange={(e) => updateInstallmentInPlan(idx, 'notes', e.target.value)}
+                                  className="w-full p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                          <div className="text-xs sm:text-sm text-right text-amber-500 font-extrabold bg-amber-500/10 p-3 rounded-lg border border-amber-500/25">
+                            مجموع الدفعات المجدولة: {installmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0).toLocaleString()} SDG
+                            {Math.abs((cartTotal - paidAmount) - installmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0)) > 0.01 && (
+                              <span className="block text-[11px] text-rose-500 mt-1.5 font-bold">يجب أن يطابق المتبقي: {(cartTotal - paidAmount).toLocaleString()} SDG</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <button 
                     onClick={handleCheckout} 
                     disabled={!selectedCustomerId || cart.length === 0 || isSubmitting} 
@@ -1453,185 +2212,10 @@ export default function Sales() {
         </div>
       )}
 
-      {/* Helper functions for delete and update invoice date */}
-      {(() => {
-        // We inject the functions inside the component scope but declare them as closures
-        window.handleDeleteSale = async () => {
-          if (!deleteConfirm.invoiceId) return;
-          setDeleteConfirm((prev) => ({ ...prev, loading: true }));
-          try {
-            await apiClient.delete(`/sales/${deleteConfirm.invoiceId}`);
-            await loadSales();
-            setDeleteConfirm({ open: false, invoiceId: null, loading: false });
-            setSelectedInvoice(null);
-          } catch (err) {
-            console.error(err);
-            alert('فشل في حذف الفاتورة');
-            setDeleteConfirm((prev) => ({ ...prev, loading: false }));
-          }
-        };
 
-        window.handleUpdateInvoiceDate = async (invoiceId: string, newDateStr: string) => {
-          try {
-            await apiClient.patch(`/sales/${invoiceId}`, { createdAt: new Date(newDateStr).toISOString() });
-            await loadSales();
-            setIsEditingDate(false);
-            if (selectedInvoice && selectedInvoice.id === invoiceId) {
-              setSelectedInvoice({
-                ...selectedInvoice,
-                createdAt: new Date(newDateStr).toISOString(),
-              });
-            }
-          } catch (err) {
-            console.error('Failed to update date:', err);
-            alert('فشل في تعديل تاريخ الفاتورة');
-          }
-        };
-      })()}
-
-      {/* Invoice Details Modal */}
-      {selectedInvoice && (
-        <div className="modal-overlay" onClick={() => { setSelectedInvoice(null); setIsEditingDate(false); }}>
-          <div className="modal-content-card max-w-2xl" onClick={(e) => e.stopPropagation()} dir="rtl">
-            <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4 mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-[var(--text-primary)]">تفاصيل الفاتورة</h3>
-                <p className="text-xs text-[var(--text-secondary)] font-mono mt-0.5">{selectedInvoice.id}</p>
-              </div>
-              <button 
-                onClick={() => { setSelectedInvoice(null); setIsEditingDate(false); }} 
-                className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Action Buttons Row */}
-            <div className="flex flex-wrap gap-2 mb-6 bg-[var(--bg-primary)] p-3 rounded-2xl border border-[var(--border-color)]">
-              <span className="text-xs font-bold text-[var(--text-secondary)] w-full mb-1">إجراءات الفاتورة:</span>
-              {user?.role === 'ADMIN' && (
-                <button
-                  onClick={() => {
-                    setEditDateValue(selectedInvoice.createdAt.split('T')[0]);
-                    setIsEditingDate(!isEditingDate);
-                  }}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                >
-                  <Edit3 className="w-4 h-4" />
-                  <span>تعديل التاريخ</span>
-                </button>
-              )}
-              <button
-                onClick={() => handlePrint(selectedInvoice)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>طباعة الفاتورة</span>
-              </button>
-              <button
-                onClick={() => handlePrint(selectedInvoice)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-500/10 hover:bg-teal-500/20 text-teal-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>تصدير PDF</span>
-              </button>
-              {user?.role === 'ADMIN' && (
-                <button
-                  onClick={() => setDeleteConfirm({ open: true, invoiceId: selectedInvoice.id, loading: false })}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer sm:mr-auto"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>حذف الفاتورة</span>
-                </button>
-              )}
-            </div>
-
-            {/* Inline Date Editor */}
-            {isEditingDate && (
-              <div className="mb-6 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-3">
-                <p className="text-xs font-bold text-amber-600">تغيير تاريخ إصدار الفاتورة لوقت سابق أو تاريخ محدد:</p>
-                <div className="flex gap-2 items-center">
-                  <div className="flex-1">
-                    <DatePicker value={editDateValue} onChange={setEditDateValue} />
-                  </div>
-                  <button
-                    onClick={() => window.handleUpdateInvoiceDate(selectedInvoice.id, editDateValue)}
-                    className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    حفظ التعديل
-                  </button>
-                  <button
-                    onClick={() => setIsEditingDate(false)}
-                    className="px-4 py-2.5 bg-[var(--border-color)] text-[var(--text-primary)] rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    إلغاء
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Invoice Info Details */}
-            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-              <div className="space-y-1">
-                <span className="text-xs text-[var(--text-secondary)]">العميل</span>
-                <p className="font-bold text-[var(--text-primary)]">{selectedInvoice.customerName}</p>
-              </div>
-              <div className="space-y-1 text-left">
-                <span className="text-xs text-[var(--text-secondary)]">تاريخ الإصدار</span>
-                <p className="font-mono font-bold text-[var(--text-primary)]">
-                  {new Date(selectedInvoice.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </div>
-            </div>
-
-            {/* Items Table */}
-            <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden mb-6">
-              <table className="w-full text-right text-xs">
-                <thead>
-                  <tr className="bg-[var(--bg-primary)] border-b border-[var(--border-color)] text-[var(--text-secondary)]">
-                    <th className="p-3">#</th>
-                    <th className="p-3">اسم المنتج</th>
-                    <th className="p-3 text-center">التشغيلة</th>
-                    <th className="p-3 text-center">الكمية</th>
-                    <th className="p-3 text-center">سعر الوحدة</th>
-                    <th className="p-3 text-left">الإجمالي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border-color)]">
-                  {selectedInvoice.items.map((item, idx) => (
-                    <tr key={idx} className="text-[var(--text-primary)]">
-                      <td className="p-3 font-mono">{idx + 1}</td>
-                      <td className="p-3 font-semibold">{item.productName}</td>
-                      <td className="p-3 text-center font-mono text-[var(--text-secondary)]">{item.batchNumber}</td>
-                      <td className="p-3 text-center font-bold font-mono">{item.qty}</td>
-                      <td className="p-3 text-center font-mono">{item.price.toLocaleString('en-US')} SDG</td>
-                      <td className="p-3 text-left font-bold font-mono">{(item.qty * item.price).toLocaleString('en-US')} SDG</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Financial Summary */}
-            <div className="glass-card rounded-2xl border border-[var(--border-color)] p-4 space-y-2.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-[var(--text-secondary)]">إجمالي الفاتورة</span>
-                <span className="font-bold text-[var(--text-primary)]">{selectedInvoice.total.toLocaleString('en-US')} SDG</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--text-secondary)]">المبلغ المسدد</span>
-                <span className="font-bold text-emerald-500">{selectedInvoice.paid.toLocaleString('en-US')} SDG</span>
-              </div>
-              <div className="flex justify-between border-t border-[var(--border-color)] pt-2.5">
-                <span className="font-bold text-[var(--text-secondary)]">المتبقي المستحق</span>
-                <span className="font-bold text-rose-500">{Math.max(0, selectedInvoice.total - selectedInvoice.paid).toLocaleString('en-US')} SDG</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Quick Add Customer Modal */}
+
       {showQuickAddCustomer && (
         <div className="modal-overlay z-[9999]" onClick={() => setShowQuickAddCustomer(false)}>
           <div className="modal-content-card max-w-md animate-fade-in" onClick={(e) => e.stopPropagation()} dir="rtl">
@@ -1741,7 +2325,7 @@ export default function Sales() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => window.handleDeleteSale()}
+                onClick={() => handleDeleteSale()}
                 disabled={deleteConfirm.loading}
                 className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
               >

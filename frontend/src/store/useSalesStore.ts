@@ -43,6 +43,8 @@ interface SalesState {
   clearOfflineQueue: () => void;
   fetchCustomers: () => Promise<void>;
   addCustomer: (cust: Omit<Customer, 'id'>) => Promise<Customer>;
+  selectedInvoiceIdForDetails: string | null;
+  setSelectedInvoiceIdForDetails: (id: string | null) => void;
 }
 
 export const useSalesStore = create<SalesState>((set, get) => {
@@ -50,6 +52,9 @@ export const useSalesStore = create<SalesState>((set, get) => {
     customers: [],
     cart: [],
     offlineSalesQueue: [],
+    selectedInvoiceIdForDetails: null,
+
+    setSelectedInvoiceIdForDetails: (id) => set({ selectedInvoiceIdForDetails: id }),
 
     setCustomers: (customers) => {
       set({ customers });

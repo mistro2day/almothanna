@@ -92,8 +92,22 @@ model Sale {
   status         SaleStatus      @default(PENDING)
   items          SaleItem[]
   deliveryOrders DeliveryOrder[]
+  installments   Installment[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+}
+
+model Installment {
+  id          String   @id @default(uuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  dueDate     DateTime
+  amount      Float
+  paidAmount  Float    @default(0)
+  status      String   @default("PENDING") // PENDING, PAID, OVERDUE
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model SaleItem {
