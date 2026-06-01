@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@100..700&family=Outfit:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@200;300;400;500;700;800;900&family=Outfit:wght@100..900&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -7,7 +7,7 @@
   --color-dark-obsidian: #020617;
   --color-dark-slate: #0f172a;
   
-  --font-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-sans: "Tajawal", system-ui, sans-serif;
   --font-display: "Outfit", sans-serif;
 }
 
@@ -33,6 +33,10 @@
   --shadow-color: rgba(0, 0, 0, 0.2);
 }
 
+html {
+  font-size: 17px; /* كبرنا حجم الخط الأساسي لتسهيل قراءة النصوص العربية (الافتراضي 16px) */
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -40,9 +44,9 @@ body {
   transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Force IBM Plex Sans Arabic on all inputs, buttons, selects, and text elements */
+/* Force Tajawal on all inputs, buttons, selects, and text elements */
 *, *::before, *::after {
-  font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  font-family: "Tajawal", system-ui, sans-serif;
 }
 
 /* Custom premium scrollbar */
