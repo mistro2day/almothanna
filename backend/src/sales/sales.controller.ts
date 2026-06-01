@@ -30,5 +30,10 @@ export class SalesController {
   async updateSaleDate(@Param('id') id: string, @Body('createdAt') createdAt: string) {
     return this.salesService.updateSaleDate(id, createdAt);
   }
+
+  @Post(':id/pay')
+  async paySale(@Param('id') id: string, @Body('amount') amount: number) {
+    return this.salesService.paySale(id, amount);
+  }
 }
 

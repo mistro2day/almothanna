@@ -373,33 +373,40 @@ export default function Dashboard() {
             </div>
           ) : (
             <>
-              <div className="h-[220px] w-full">
+              <div className="h-[240px] w-full" dir="ltr">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={topProductsData}
                     layout="vertical"
-                    margin={{ top: 2, right: 8, left: 0, bottom: 2 }}
-                    barCategoryGap="18%"
+                    margin={{ top: 10, right: 35, left: 10, bottom: 5 }}
+                    barCategoryGap="20%"
                   >
                     {/* Hidden X axis – we only need relative bar sizes */}
                     <XAxis type="number" hide domain={[0, 'dataMax']} />
 
-                    {/* Hidden Y axis – labels drawn via LabelList inside bar */}
-                    <YAxis dataKey="name" type="category" hide width={0} />
+                    {/* Visible Y axis with proper spacing for labels */}
+                    <YAxis 
+                      dataKey="name" 
+                      type="category" 
+                      stroke="var(--text-secondary)" 
+                      fontSize={11} 
+                      tickLine={false}
+                      axisLine={false}
+                      width={130}
+                    />
 
                     <Tooltip content={<CustomBarTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
 
-                    <Bar dataKey="qty" name="الكمية" radius={[0, 6, 6, 0]} maxBarSize={30}>
+                    <Bar dataKey="qty" name="الكمية" radius={[0, 6, 6, 0]} maxBarSize={24}>
                       {topProductsData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
-                      {/* ✅ Product name label INSIDE the bar */}
-                      <LabelList content={<BarLabel />} dataKey="name" position="insideLeft" />
-                      {/* ✅ Quantity label at end of bar */}
+                      {/* Quantity label at end of bar with safe spacing */}
                       <LabelList
                         dataKey="qty"
                         position="right"
-                        style={{ fill: 'var(--text-secondary)', fontSize: 10, fontWeight: 600 }}
+                        offset={10}
+                        style={{ fill: 'var(--text-primary)', fontSize: 11, fontWeight: 700 }}
                         formatter={(v: number) => v.toLocaleString('en-US')}
                       />
                     </Bar>
@@ -408,7 +415,7 @@ export default function Dashboard() {
               </div>
 
               {/* Color legend */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 pt-1">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 pt-2 border-t border-[var(--border-color)]/20">
                 {topProductsData.map((item, idx) => (
                   <div key={idx} className="flex items-center gap-1.5 text-[10px] text-[var(--text-secondary)] truncate">
                     <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: item.color }} />

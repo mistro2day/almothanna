@@ -228,6 +228,24 @@ export class SalesService {
     });
   }
 
+  async paySale(id: string, amount: number) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+    });
+    if (!sale) {
+      throw new NotFoundException('Sale not found');
+    }
+    const newPaid = sale.paid + amount;
+    const status = newPaid >= sale.total ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+    return this.prisma.sale.update({
+      where: { id },
+      data: {
+        paid: newPaid,
+        status,
+      },
+    });
+  }
+
   async getDashboardStats() {
     // Get all sales with items for calculation
     const sales = await this.prisma.sale.findMany({
