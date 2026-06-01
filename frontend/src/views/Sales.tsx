@@ -128,6 +128,10 @@ export default function Sales() {
   const [invoiceDate, setInvoiceDate] = useState(getTodayStr());
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [filterCustomerName, setFilterCustomerName] = useState('');
+  const [filterCustomerSearch, setFilterCustomerSearch] = useState('');
+  const [isFilterCustomerDropdownOpen, setIsFilterCustomerDropdownOpen] = useState(false);
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; invoiceId: string | null; loading: boolean }>({
     open: false,
@@ -146,16 +150,13 @@ export default function Sales() {
   });
 
   const filteredInvoiceList = sales.filter((sale) => {
-    // 1. Text Search Filter
+    // 1. Text Search Filter (Invoice ID or Customer Name)
     const matchesSearch = (() => {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.trim().toLowerCase();
-      const statusLabel = sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق';
       return (
         sale.id.toLowerCase().includes(q) ||
-        sale.customerName.toLowerCase().includes(q) ||
-        statusLabel.includes(q) ||
-        sale.total.toString().includes(q)
+        sale.customerName.toLowerCase().includes(q)
       );
     })();
 
@@ -178,7 +179,13 @@ export default function Sales() {
       return true;
     })();
 
-    return matchesSearch && matchesDateRange;
+    // 3. Customer Filter
+    const matchesCustomer = !filterCustomerName || sale.customerName === filterCustomerName;
+
+    // 4. Payment Status Filter
+    const matchesPaymentStatus = !filterPaymentStatus || sale.status === filterPaymentStatus;
+
+    return matchesSearch && matchesDateRange && matchesCustomer && matchesPaymentStatus;
   });
 
   useEffect(() => {
@@ -713,62 +720,138 @@ export default function Sales() {
           </div>
 
           <div className="glass-card p-4 sm:p-6 rounded-3xl border border-[var(--glass-border)]">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-              <div>
-                <h2 className="text-lg sm:text-xl font-semibold text-[var(--text-primary)]">الفواتير المصدرة</h2>
-                <p className="mt-1 text-sm text-[var(--text-secondary)]">عرض سريع لكل الفواتير المسجلة وأوضاع الدفع والتصدير.</p>
+            {/* Search and Filters Dashboard Card Banner */}
+            <div className="bg-emerald-500/[0.03] dark:bg-emerald-950/[0.15] border border-emerald-500/10 dark:border-emerald-500/5 rounded-3xl p-4 sm:p-6 mb-6 space-y-6">
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/[0.03] to-transparent dark:from-emerald-500/5 dark:to-transparent border border-emerald-500/10">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+                    <span className="w-2.5 h-6 rounded-full bg-emerald-600 block"></span>
+                    الفواتير المصدرة
+                  </h2>
+                  <p className="mt-1 text-xs sm:text-sm text-[var(--text-secondary)]">عرض سريع لكل الفواتير المسجلة وأوضاع الدفع والتصدير.</p>
+                </div>
+                <div className="flex gap-2 w-full lg:w-auto">
+                  <button
+                    onClick={handleExportExcel}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>تصدير إكسل</span>
+                  </button>
+                  <button
+                    onClick={handleExportPDF}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>تصدير بي دي إف</span>
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <button
-                  onClick={handleExportExcel}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>تصدير إكسل</span>
-                </button>
-                <button
-                  onClick={handleExportPDF}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>تصدير بي دي إف</span>
-                </button>
-              </div>
-            </div>
 
-            {/* Date Filters Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 items-end" dir="rtl">
-              <div className="space-y-1.5 text-right">
-                <label className="block text-xs font-bold text-[var(--text-secondary)]">من تاريخ</label>
-                <DatePicker value={fromDate} onChange={setFromDate} placeholder="اختر تاريخ البداية" />
+              {/* Date and Custom Filters Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end" dir="rtl">
+                <div className="space-y-1.5 text-right">
+                  <label className="block text-xs font-bold text-[var(--text-secondary)]">من تاريخ</label>
+                  <DatePicker value={fromDate} onChange={setFromDate} placeholder="اختر تاريخ البداية" />
+                </div>
+                <div className="space-y-1.5 text-right">
+                  <label className="block text-xs font-bold text-[var(--text-secondary)]">إلى تاريخ</label>
+                  <DatePicker value={toDate} onChange={setToDate} placeholder="اختر تاريخ النهاية" />
+                </div>
+                <div className="space-y-1.5 text-right relative">
+                  <label className="block text-xs font-bold text-[var(--text-secondary)]">العميل</label>
+                  <div className="relative w-full">
+                    <input
+                      type="text"
+                      value={isFilterCustomerDropdownOpen ? filterCustomerSearch : (filterCustomerName || 'جميع العملاء')}
+                      placeholder="ابحث عن العميل..."
+                      onFocus={() => {
+                        setFilterCustomerSearch('');
+                        setIsFilterCustomerDropdownOpen(true);
+                      }}
+                      onChange={(e) => {
+                        setFilterCustomerSearch(e.target.value);
+                        setIsFilterCustomerDropdownOpen(true);
+                      }}
+                      className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-2 text-[var(--text-primary)] text-sm outline-none focus:border-emerald-500/50 transition-colors h-[42px]"
+                    />
+                    {isFilterCustomerDropdownOpen && (
+                      <div className="absolute z-50 w-full mt-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-60 overflow-y-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilterCustomerName('');
+                            setIsFilterCustomerDropdownOpen(false);
+                          }}
+                          className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-secondary)] text-sm transition-colors block border-b border-[var(--border-color)]/20 last:border-0 font-bold"
+                        >
+                          جميع العملاء
+                        </button>
+                        {customers
+                          .filter(c => c.name.toLowerCase().includes(filterCustomerSearch.toLowerCase()))
+                          .map((c) => (
+                            <button
+                              type="button"
+                              key={c.id}
+                              onClick={() => {
+                                setFilterCustomerName(c.name);
+                                setIsFilterCustomerDropdownOpen(false);
+                              }}
+                              className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-sm transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                            >
+                              {c.name}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                  {isFilterCustomerDropdownOpen && (
+                    <div 
+                      className="fixed inset-0 z-40 bg-transparent" 
+                      onClick={() => setIsFilterCustomerDropdownOpen(false)} 
+                    />
+                  )}
+                </div>
+                <div className="space-y-1.5 text-right">
+                  <label className="block text-xs font-bold text-[var(--text-secondary)]">حالة المبالغ</label>
+                  <select
+                    value={filterPaymentStatus}
+                    onChange={(e) => setFilterPaymentStatus(e.target.value)}
+                    className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-2.5 text-[var(--text-primary)] text-sm outline-none focus:border-emerald-500/50 transition-colors h-[42px]"
+                  >
+                    <option value="">جميع الحالات</option>
+                    <option value="PAID">مدفوع بالكامل</option>
+                    <option value="PARTIAL">مدفوع جزئياً</option>
+                    <option value="PENDING">غير مدفوع / معلق</option>
+                  </select>
+                </div>
               </div>
-              <div className="space-y-1.5 text-right">
-                <label className="block text-xs font-bold text-[var(--text-secondary)]">إلى تاريخ</label>
-                <DatePicker value={toDate} onChange={setToDate} placeholder="اختر تاريخ النهاية" />
-              </div>
-              {(fromDate || toDate) && (
-                <button
-                  onClick={() => { setFromDate(''); setToDate(''); }}
-                  className="px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer h-[42px] flex items-center justify-center gap-1.5"
-                >
-                  <X className="w-4 h-4" />
-                  <span>إلغاء التصفية</span>
-                </button>
+
+              {(fromDate || toDate || filterCustomerName || filterPaymentStatus) && (
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => { setFromDate(''); setToDate(''); setFilterCustomerName(''); setFilterPaymentStatus(''); }}
+                    className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>إلغاء جميع الفلاتر</span>
+                  </button>
+                </div>
               )}
-            </div>
 
-            {/* Search Bar */}
-            <div className="relative mb-4 sm:mb-6">
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                <Search className="w-4 h-4 text-[var(--text-secondary)]" />
+              {/* Search Bar */}
+              <div className="relative">
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <Search className="w-4 h-4 text-[var(--text-secondary)]" />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="ابحث برقم الفاتورة أو اسم العميل..."
+                  className="w-full pr-10 pl-4 py-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm outline-none focus:border-emerald-500/50 transition-colors"
+                />
               </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ابحث برقم الفاتورة، اسم العميل، الحالة، أو المبلغ..."
-                className="w-full pr-10 pl-4 py-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm outline-none focus:border-emerald-500/50 transition-colors"
-              />
             </div>
 
             {loading ? (
@@ -792,18 +875,18 @@ export default function Sales() {
                 </div>
                 
                 {/* Desktop: Table View */}
-                <div className="hidden lg:block overflow-x-auto">
-                  <table className="w-full text-right text-sm">
+                <div className="hidden lg:block overflow-x-auto rounded-2xl border border-[var(--border-color)]">
+                  <table className="w-full text-right text-sm border-collapse">
                     <thead>
-                      <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
-                        <th className="pb-3 pr-2">رقم الفاتورة</th>
-                        <th className="pb-3 text-center">العميل</th>
-                        <th className="pb-3 text-center">التاريخ</th>
-                        <th className="pb-3 text-center">الإجمالي</th>
-                        <th className="pb-3 text-center">المدفوع</th>
-                        <th className="pb-3 text-center">المتبقي</th>
-                        <th className="pb-3 text-center">الحالة</th>
-                        <th className="pb-3 text-center">إجراءات</th>
+                      <tr className="bg-emerald-700 text-white dark:bg-emerald-950/70 dark:text-emerald-200 font-bold border-b border-emerald-600/20">
+                        <th className="py-4 px-4 pr-6 text-right rounded-tr-2xl">رقم الفاتورة</th>
+                        <th className="py-4 px-4 text-center">العميل</th>
+                        <th className="py-4 px-4 text-center">التاريخ</th>
+                        <th className="py-4 px-4 text-center">الإجمالي</th>
+                        <th className="py-4 px-4 text-center">المدفوع</th>
+                        <th className="py-4 px-4 text-center">المتبقي</th>
+                        <th className="py-4 px-4 text-center">الحالة</th>
+                        <th className="py-4 px-4 pl-6 text-center rounded-tl-2xl">إجراءات</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border-color)]">
@@ -815,13 +898,13 @@ export default function Sales() {
                             onClick={() => setSelectedInvoice(sale)} 
                             className="hover:bg-[var(--border-color)]/30 transition-colors cursor-pointer"
                           >
-                            <td className="py-3 pr-2 font-mono font-semibold text-[var(--text-primary)]">{sale.id}</td>
-                            <td className="py-3 text-center text-[var(--text-primary)]">{sale.customerName}</td>
-                            <td className="py-3 text-center font-mono text-[var(--text-secondary)]">{new Date(sale.createdAt).toLocaleDateString('en-US')}</td>
-                            <td className="py-3 text-center font-bold text-[var(--text-primary)]">{sale.total.toLocaleString('en-US')} SDG</td>
-                            <td className="py-3 text-center font-bold text-emerald-500">{sale.paid.toLocaleString('en-US')} SDG</td>
-                            <td className="py-3 text-center font-mono text-rose-500">{remaining.toLocaleString('en-US')} SDG</td>
-                            <td className="py-3 text-center">
+                            <td className="py-4 px-4 pr-6 font-mono font-semibold text-[var(--text-primary)]">{sale.id}</td>
+                            <td className="py-4 px-4 text-center text-[var(--text-primary)]">{sale.customerName}</td>
+                            <td className="py-4 px-4 text-center font-mono text-[var(--text-secondary)]">{new Date(sale.createdAt).toLocaleDateString('en-US')}</td>
+                            <td className="py-4 px-4 text-center font-bold text-[var(--text-primary)]">{sale.total.toLocaleString('en-US')} SDG</td>
+                            <td className="py-4 px-4 text-center font-bold text-emerald-500">{sale.paid.toLocaleString('en-US')} SDG</td>
+                            <td className="py-4 px-4 text-center font-mono text-rose-500">{remaining.toLocaleString('en-US')} SDG</td>
+                            <td className="py-4 px-4 text-center">
                               <span className={`px-3 py-1 rounded-full text-[11px] font-semibold ${
                                 sale.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : 
                                 sale.status === 'PARTIAL' ? 'bg-amber-500/10 text-amber-500' : 
@@ -830,7 +913,7 @@ export default function Sales() {
                                 {sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق'}
                               </span>
                             </td>
-                            <td className="py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <td className="py-4 px-4 pl-6 text-center" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1.5">
                                 {sale.status !== 'PAID' && (
                                   <button

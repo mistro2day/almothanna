@@ -179,7 +179,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row relative overflow-hidden bg-[var(--bg-primary)] transition-colors duration-300">
+    <div className="h-screen w-screen flex flex-col md:flex-row relative overflow-hidden bg-[var(--bg-primary)] transition-colors duration-300">
       {/* Glow backgrounds for aesthetics */}
       <div className="glow-bg top-[-10%] right-[-10%] w-[350px] h-[350px] bg-emerald-500/10" />
       <div className="glow-bg bottom-[-10%] left-[-10%] w-[350px] h-[350px] bg-teal-500/10" />
@@ -285,7 +285,7 @@ export default function App() {
       </aside>
 
       {/* Mobile Header with Drawer Toggle */}
-      <header className="md:hidden glass-card border-b border-[var(--border-color)] p-4 flex items-center justify-between z-20" dir="rtl">
+      <header className="md:hidden sticky top-0 bg-[var(--bg-primary)]/80 backdrop-blur-lg border-b border-[var(--border-color)] p-4 flex items-center justify-between z-30" dir="rtl">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-xl">
             <HeartHandshake className="w-5 h-5" />
@@ -432,9 +432,9 @@ export default function App() {
       )}
 
       {/* Main Content Area - Desktop */}
-      <main className="hidden md:block flex-1 p-6 md:p-10 z-10 overflow-y-auto max-h-screen">
+      <main className="hidden md:block flex-1 z-10 overflow-y-auto max-h-screen">
         {/* Top Header Bar for Desktop */}
-        <div className="flex justify-between items-center mb-6 pb-4 border-b border-[var(--border-color)]" dir="rtl">
+        <div className="sticky top-0 bg-[var(--bg-primary)]/80 backdrop-blur-lg z-30 flex justify-between items-center py-4 px-6 md:px-10 border-b border-[var(--border-color)]" dir="rtl">
           <div className="text-right">
             <h1 className="text-2xl font-bold font-display text-[var(--text-primary)]">
               {navItems.find(n => n.id === activeTab)?.label || 'لوحة التحكم'}
@@ -444,7 +444,10 @@ export default function App() {
             <NotificationsCenter />
           </div>
         </div>
-        {renderView()}
+        
+        <div className="p-6 md:p-10">
+          {renderView()}
+        </div>
       </main>
 
       {/* Main Content Area - Mobile */}
@@ -462,12 +465,12 @@ export default function App() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as ViewType)}
-                className={`flex flex-col items-center justify-center gap-1 py-2 px-2 rounded-xl transition-all duration-200 flex-1 min-w-0 touch-target ${
-                  isActive ? 'bg-emerald-500/10' : ''
+                className={`flex flex-col items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition-all duration-150 active:scale-90 flex-1 min-w-0 touch-target cursor-pointer ${
+                  isActive ? 'bg-emerald-500/10 text-emerald-500' : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]/20'
                 }`}
               >
-                <Icon className={`w-6 h-6 sm:w-7 sm:h-7 ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`} />
-                <span className={`text-[11px] sm:text-xs font-semibold truncate w-full text-center ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`}>
+                <Icon className={`w-6 h-6 sm:w-7 sm:h-7 ${isActive ? 'text-emerald-500 scale-105' : 'text-[var(--text-secondary)]'} transition-transform`} />
+                <span className={`text-[11px] sm:text-xs font-bold truncate w-full text-center ${isActive ? 'text-emerald-500' : 'text-[var(--text-secondary)]'}`}>
                   {item.label}
                 </span>
               </button>
