@@ -66,6 +66,9 @@ export default function Inventory() {
   const [productSuggestions, setProductSuggestions] = useState<typeof COMMON_MEDICINES_DICTIONARY>([]);
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
 
+  const [scientificSuggestions, setScientificSuggestions] = useState<typeof COMMON_MEDICINES_DICTIONARY>([]);
+  const [showScientificSuggestions, setShowScientificSuggestions] = useState(false);
+
   const [batchProductSearch, setBatchProductSearch] = useState('');
   const [showBatchProductDropdown, setShowBatchProductDropdown] = useState(false);
 
@@ -392,7 +395,8 @@ export default function Inventory() {
     {/* Modal 1: Add Product */}
       {showProductModal && (
         <div className="modal-overlay">
-          <div className="modal-content-card max-w-md" dir="rtl">
+          <div className="modal-content-card modal-product max-w-md" dir="rtl">
+            <div className="modal-glow-back" />
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة منتج دوائي جديد</h3>
             
             <form onSubmit={handleAddProduct} className="space-y-3 text-sm">
@@ -450,15 +454,63 @@ export default function Inventory() {
                 )}
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 relative">
                 <label className="block text-[var(--text-secondary)] font-medium">الاسم العلمي</label>
                 <input 
                   type="text" 
                   value={newProduct.scientificName}
-                  onChange={(e) => setNewProduct({ ...newProduct, scientificName: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewProduct({ ...newProduct, scientificName: val });
+                    if (val.trim().length > 1) {
+                      const filtered = COMMON_MEDICINES_DICTIONARY.filter(med => 
+                        med.scientificName.toLowerCase().includes(val.toLowerCase())
+                      );
+                      // Keep only unique scientific names to avoid duplicates in suggestions
+                      const uniqueFiltered: typeof COMMON_MEDICINES_DICTIONARY = [];
+                      const seen = new Set();
+                      for (const item of filtered) {
+                        if (!seen.has(item.scientificName.toLowerCase())) {
+                          seen.add(item.scientificName.toLowerCase());
+                          uniqueFiltered.push(item);
+                        }
+                      }
+                      setScientificSuggestions(uniqueFiltered);
+                      setShowScientificSuggestions(true);
+                    } else {
+                      setScientificSuggestions([]);
+                      setShowScientificSuggestions(false);
+                    }
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => setShowScientificSuggestions(false), 200);
+                  }}
                   placeholder="مثال: Paracetamol"
                   className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-emerald-500"
                 />
+
+                {showScientificSuggestions && scientificSuggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-[var(--border-color)]">
+                    {scientificSuggestions.map((med, index) => (
+                      <div
+                        key={index}
+                        onMouseDown={() => {
+                          setNewProduct({
+                            ...newProduct,
+                            scientificName: med.scientificName,
+                            category: med.category || newProduct.category,
+                            unit: med.unit || newProduct.unit
+                          });
+                          setShowScientificSuggestions(false);
+                        }}
+                        className="p-3 hover:bg-[var(--border-color)]/30 cursor-pointer transition-all flex flex-col justify-start text-right"
+                      >
+                        <span className="font-bold text-sm text-[var(--text-primary)]">{med.scientificName}</span>
+                        <span className="text-xs text-[var(--text-secondary)] mt-0.5">مثال: {med.name} ({med.category})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -522,7 +574,8 @@ export default function Inventory() {
       {/* Modal 2: Add Batch */}
       {showBatchModal && (
         <div className="modal-overlay">
-          <div className="modal-content-card max-w-md" dir="rtl">
+          <div className="modal-content-card modal-batch max-w-md" dir="rtl">
+            <div className="modal-glow-back" />
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة تشغيلة دواء (Batch Entry)</h3>
             
             <form onSubmit={handleAddBatch} className="space-y-3 text-sm">

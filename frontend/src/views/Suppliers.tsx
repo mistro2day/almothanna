@@ -860,7 +860,8 @@ export default function Suppliers() {
     {/* ========== Add Supplier Modal ========== */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content-card max-w-2xl" dir="rtl">
+          <div className="modal-content-card modal-supplier max-w-2xl" dir="rtl">
+            <div className="modal-glow-back" />
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-[var(--text-primary)]">تسجيل مورد جديد</h3>
               <button onClick={() => setShowAddModal(false)} className="p-1.5 rounded-lg hover:bg-[var(--border-color)] text-[var(--text-secondary)] cursor-pointer"><X className="w-5 h-5" /></button>

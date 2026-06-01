@@ -207,7 +207,8 @@ export default function Customers() {
     {/* Add Customer Modal */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content-card max-w-md" dir="rtl">
+          <div className="modal-content-card modal-customer max-w-md" dir="rtl">
+            <div className="modal-glow-back" />
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة عميل معتمد جديد</h3>
             
             <form onSubmit={handleAddCustomer} className="space-y-3 text-sm">

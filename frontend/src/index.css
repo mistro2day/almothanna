@@ -324,3 +324,113 @@ body {
   margin-bottom: 0.35rem;
   display: block;
 }
+
+/* ==========================================================================
+   نظام النوافذ المنبثقة الفاخر والمطور - نظام المثنى ERP
+   ========================================================================== */
+
+/* تأثير هالة الضوء المحيطي المتوهج خلف الكرت للمظهر المتميز */
+.modal-glow-back {
+  position: absolute;
+  top: -20%;
+  left: 30%;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+  transition: all 0.5s ease;
+}
+
+/* 1. تخصيص هوية إضافة منتج */
+.modal-product::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #10b981, #34d399); /* تدرج الزمرد المشرق */
+  z-index: 10;
+  border-radius: 1.75rem 1.75rem 0 0;
+}
+
+.modal-product .modal-glow-back {
+  background: #10b981;
+}
+
+.modal-product input:focus,
+.modal-product select:focus {
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12) !important;
+}
+
+/* 2. تخصيص هوية إضافة تشغيلة */
+.modal-batch::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #14b8a6, #06b6d4); /* تدرج الفيروز والسيان */
+  z-index: 10;
+  border-radius: 1.75rem 1.75rem 0 0;
+}
+
+.modal-batch .modal-glow-back {
+  background: #14b8a6;
+}
+
+.modal-batch input:focus,
+.modal-batch select:focus {
+  border-color: rgba(20, 184, 166, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12) !important;
+}
+
+/* 3. تخصيص هوية إضافة عميل */
+.modal-customer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6); /* بنفسجي ونيلي ملكي */
+  z-index: 10;
+  border-radius: 1.75rem 1.75rem 0 0;
+}
+
+.modal-customer .modal-glow-back {
+  background: #6366f1;
+}
+
+.modal-customer input:focus {
+  border-color: rgba(99, 102, 241, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12) !important;
+}
+
+/* 4. تخصيص هوية إضافة مورد */
+.modal-supplier::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #f59e0b, #f97316); /* برتقالي دافئ وكهربائي */
+  z-index: 10;
+  border-radius: 1.75rem 1.75rem 0 0;
+}
+
+.modal-supplier .modal-glow-back {
+  background: #f59e0b;
+}
+
+.modal-supplier input:focus {
+  border-color: rgba(245, 158, 11, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12) !important;
+}
+
