@@ -19,7 +19,7 @@ export default function NotificationsCenter() {
   const [toast, setToast] = useState<{ id: string; title: string; message: string } | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !user.id) return;
     fetchNotifications(user.id);
 
     // Hybrid Sync fallback: Poll every 5 seconds to sync notifications instantly
@@ -95,7 +95,7 @@ export default function NotificationsCenter() {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 mt-3 w-80 glass-card rounded-2xl border border-[var(--glass-border)] shadow-2xl z-40 overflow-hidden animate-zoom-in text-right max-h-[450px] flex flex-col bg-[var(--bg-primary)]/95 backdrop-blur-md">
+          <div className="fixed md:absolute top-20 md:top-auto left-4 right-4 md:left-0 md:right-auto mt-3 md:w-80 glass-card rounded-2xl border border-[var(--glass-border)] shadow-2xl z-40 overflow-hidden animate-zoom-in text-right max-h-[450px] flex flex-col bg-[var(--bg-primary)]/95 backdrop-blur-md">
             <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between">
               <button
                 onClick={() => {
