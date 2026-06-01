@@ -29,7 +29,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   eventSource: null,
 
   fetchNotifications: async (userId) => {
-    set({ loadingNotifications: true });
+    if (get().notifications.length === 0) {
+      set({ loadingNotifications: true });
+    }
     try {
       const { data } = await apiClient.get<Notification[]>(`/notifications/${userId}`);
       const unreadCount = data.filter((n) => !n.isRead).length;

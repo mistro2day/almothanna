@@ -21,6 +21,36 @@ const generateBatchNumber = () => {
   return `BAT-${dateStr}-${rand}`;
 };
 
+const COMMON_MEDICINES_DICTIONARY = [
+  { name: 'Panadol 500mg', scientificName: 'Paracetamol', category: 'Analgesic', unit: 'Box' },
+  { name: 'Panadol Extra', scientificName: 'Paracetamol / Caffeine', category: 'Analgesic', unit: 'Box' },
+  { name: 'Amoxil 500mg', scientificName: 'Amoxicillin Trihydrate', category: 'Antibiotic', unit: 'Box' },
+  { name: 'Brufen 400mg', scientificName: 'Ibuprofen', category: 'Analgesic / NSAID', unit: 'Box' },
+  { name: 'Voltaren 50mg', scientificName: 'Diclofenac Sodium', category: 'Analgesic / NSAID', unit: 'Box' },
+  { name: 'Augmentin 1g', scientificName: 'Amoxicillin Clavulanate Potassium', category: 'Antibiotic', unit: 'Box' },
+  { name: 'Zithromax 500mg', scientificName: 'Azithromycin Dihydrate', category: 'Antibiotic', unit: 'Box' },
+  { name: 'Glucophage 850mg', scientificName: 'Metformin Hydrochloride', category: 'Antidiabetic', unit: 'Box' },
+  { name: 'Glucophage 1000mg', scientificName: 'Metformin Hydrochloride', category: 'Antidiabetic', unit: 'Box' },
+  { name: 'Losec 20mg', scientificName: 'Omeprazole', category: 'Antiulcer', unit: 'Box' },
+  { name: 'Lipitor 20mg', scientificName: 'Atorvastatin Calcium', category: 'Lipid-lowering', unit: 'Box' },
+  { name: 'Lipitor 10mg', scientificName: 'Atorvastatin Calcium', category: 'Lipid-lowering', unit: 'Box' },
+  { name: 'Norvasc 5mg', scientificName: 'Amlodipine Besylate', category: 'Antihypertensive', unit: 'Box' },
+  { name: 'Norvasc 10mg', scientificName: 'Amlodipine Besylate', category: 'Antihypertensive', unit: 'Box' },
+  { name: 'Concor 5mg', scientificName: 'Bisoprolol Fumarate', category: 'Antihypertensive', unit: 'Box' },
+  { name: 'Concor 2.5mg', scientificName: 'Bisoprolol Fumarate', category: 'Antihypertensive', unit: 'Box' },
+  { name: 'Ventolin Inhaler 100mcg', scientificName: 'Salbutamol Sulfate', category: 'Bronchodilator', unit: 'Inhaler' },
+  { name: 'Ciprobay 500mg', scientificName: 'Ciprofloxacin Hydrochloride', category: 'Antibiotic', unit: 'Box' },
+  { name: 'Nexium 40mg', scientificName: 'Esomeprazole Magnesium', category: 'Antiulcer', unit: 'Box' },
+  { name: 'Crestor 10mg', scientificName: 'Rosuvastatin Calcium', category: 'Lipid-lowering', unit: 'Box' },
+  { name: 'Plavix 75mg', scientificName: 'Clopidogrel Bisulfate', category: 'Antiplatelet', unit: 'Box' },
+  { name: 'Ventolin Syrup', scientificName: 'Salbutamol Sulfate', category: 'Bronchodilator', unit: 'Bottle' },
+  { name: 'Zinnat 500mg', scientificName: 'Cefuroxime Axetil', category: 'Antibiotic', unit: 'Box' },
+  { name: 'Klacid 500mg', scientificName: 'Clarithromycin', category: 'Antibiotic', unit: 'Box' },
+  { name: 'Daflon 500mg', scientificName: 'Micronized Purified Flavonoid Fraction', category: 'Vasoprotective', unit: 'Box' },
+  { name: 'Solpadeine Soluble', scientificName: 'Paracetamol / Caffeine / Codeine Phosphate', category: 'Analgesic', unit: 'Box' },
+  { name: 'Duspatalin 135mg', scientificName: 'Mebeverine Hydrochloride', category: 'Antispasmodic', unit: 'Box' }
+];
+
 export default function Inventory() {
   const { products, batches, addProduct, addBatch, addBatchQty } = useInventoryStore();
   const { user } = useAuthStore();
@@ -31,6 +61,13 @@ export default function Inventory() {
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [additionalQty, setAdditionalQty] = useState<number>(0);
   const [addingQtyLoading, setAddingQtyLoading] = useState(false);
+
+  // Autocomplete UI States
+  const [productSuggestions, setProductSuggestions] = useState<typeof COMMON_MEDICINES_DICTIONARY>([]);
+  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
+
+  const [batchProductSearch, setBatchProductSearch] = useState('');
+  const [showBatchProductDropdown, setShowBatchProductDropdown] = useState(false);
 
   // Modals visibility
   const [showProductModal, setShowProductModal] = useState(false);
@@ -59,6 +96,12 @@ export default function Inventory() {
     p.name.toLowerCase().includes(search.toLowerCase()) || 
     p.scientificName?.toLowerCase().includes(search.toLowerCase()) ||
     p.barcode?.includes(search)
+  );
+
+  // Filtered products list for Batch Selection autocomplete
+  const filteredProductsForBatch = products.filter(p =>
+    p.name.toLowerCase().includes(batchProductSearch.toLowerCase()) ||
+    p.scientificName?.toLowerCase().includes(batchProductSearch.toLowerCase())
   );
 
   const handleAddProduct = async (e: React.FormEvent) => {
@@ -141,7 +184,8 @@ export default function Inventory() {
           <button 
             onClick={() => {
               setShowBatchModal(true);
-              setNewBatch(prev => ({ ...prev, batchNumber: generateBatchNumber() }));
+              setBatchProductSearch('');
+              setNewBatch(prev => ({ ...prev, productId: '', batchNumber: generateBatchNumber() }));
             }}
             disabled={products.length === 0}
             className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-teal-500/10 cursor-pointer touch-target w-full sm:w-auto"
@@ -352,16 +396,58 @@ export default function Inventory() {
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة منتج دوائي جديد</h3>
             
             <form onSubmit={handleAddProduct} className="space-y-3 text-sm">
-              <div className="space-y-1">
+              <div className="space-y-1 relative">
                 <label className="block text-[var(--text-secondary)] font-medium">اسم المنتج (التجاري)</label>
                 <input 
                   type="text" 
                   required
                   value={newProduct.name}
-                  onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewProduct({ ...newProduct, name: val });
+                    if (val.trim().length > 1) {
+                      const filtered = COMMON_MEDICINES_DICTIONARY.filter(med => 
+                        med.name.toLowerCase().includes(val.toLowerCase()) ||
+                        med.scientificName.toLowerCase().includes(val.toLowerCase())
+                      );
+                      setProductSuggestions(filtered);
+                      setShowProductSuggestions(true);
+                    } else {
+                      setProductSuggestions([]);
+                      setShowProductSuggestions(false);
+                    }
+                  }}
+                  onBlur={() => {
+                    // Slight delay to allow clicking suggestions before hiding
+                    setTimeout(() => setShowProductSuggestions(false), 200);
+                  }}
                   placeholder="مثال: Paracetamol 500mg"
                   className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-emerald-500"
                 />
+
+                {showProductSuggestions && productSuggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-[var(--border-color)]">
+                    {productSuggestions.map((med, index) => (
+                      <div
+                        key={index}
+                        onMouseDown={() => {
+                          setNewProduct({
+                            name: med.name,
+                            scientificName: med.scientificName,
+                            category: med.category,
+                            unit: med.unit,
+                            barcode: newProduct.barcode
+                          });
+                          setShowProductSuggestions(false);
+                        }}
+                        className="p-3 hover:bg-[var(--border-color)]/30 cursor-pointer transition-all flex flex-col justify-start text-right"
+                      >
+                        <span className="font-bold text-sm text-[var(--text-primary)]">{med.name}</span>
+                        <span className="text-xs text-[var(--text-secondary)] italic mt-0.5">{med.scientificName} ({med.category})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -440,19 +526,56 @@ export default function Inventory() {
             <h3 className="text-xl font-bold text-[var(--text-primary)]">إضافة تشغيلة دواء (Batch Entry)</h3>
             
             <form onSubmit={handleAddBatch} className="space-y-3 text-sm">
-              <div className="space-y-1">
+              <div className="space-y-1 relative">
                 <label className="block text-[var(--text-secondary)] font-medium">اختر المنتج الدوائي</label>
-                <select 
-                  required
-                  value={newBatch.productId}
-                  onChange={(e) => setNewBatch({ ...newBatch, productId: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-teal-500"
-                >
-                  <option value="">-- اختر المنتج --</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="ابحث بالاسم التجاري أو العلمي..."
+                    value={batchProductSearch}
+                    onChange={(e) => {
+                      setBatchProductSearch(e.target.value);
+                      setShowBatchProductDropdown(true);
+                    }}
+                    onFocus={() => setShowBatchProductDropdown(true)}
+                    onBlur={() => {
+                      // Slight delay to allow clicking suggestions before hiding
+                      setTimeout(() => setShowBatchProductDropdown(false), 200);
+                    }}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-teal-500"
+                  />
+                  {newBatch.productId && (
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold px-2 py-0.5 rounded bg-teal-500/10 text-teal-600">
+                      ✓ تم الاختيار
+                    </span>
+                  )}
+                </div>
+
+                {showBatchProductDropdown && (
+                  <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-[var(--border-color)]">
+                    {filteredProductsForBatch.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-[var(--text-secondary)]">لا توجد أدوية مطابقة</div>
+                    ) : (
+                      filteredProductsForBatch.map((p) => (
+                        <div
+                          key={p.id}
+                          onMouseDown={() => {
+                            setNewBatch({ ...newBatch, productId: p.id });
+                            setBatchProductSearch(p.name);
+                            setShowBatchProductDropdown(false);
+                          }}
+                          className={`p-3 hover:bg-[var(--border-color)]/30 cursor-pointer transition-all flex flex-col justify-start text-right ${newBatch.productId === p.id ? 'bg-teal-500/5' : ''}`}
+                        >
+                          <span className="font-bold text-sm text-[var(--text-primary)]">{p.name}</span>
+                          {p.scientificName && (
+                            <span className="text-xs text-[var(--text-secondary)] italic mt-0.5">{p.scientificName}</span>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">

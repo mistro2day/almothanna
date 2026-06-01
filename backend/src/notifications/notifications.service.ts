@@ -14,12 +14,8 @@ export class NotificationsService {
 
   async sendNotificationToOthers(senderId: string, title: string, message: string) {
     try {
-      // 1. Get all other users from database
-      const otherUsers = await this.prisma.user.findMany({
-        where: {
-          id: { not: senderId },
-        },
-      });
+      // Get all users from database (including the sender for instant feedback and audit verification)
+      const otherUsers = await this.prisma.user.findMany();
 
       if (otherUsers.length === 0) return;
 

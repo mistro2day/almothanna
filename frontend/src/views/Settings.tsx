@@ -72,6 +72,13 @@ export default function Settings() {
       fetchUsers();
     }
     fetchActivities();
+
+    // Auto-refresh activities log every 5 seconds to display actions in real-time
+    const interval = setInterval(() => {
+      fetchActivities();
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [currentUser]);
 
   const showNotification = (msg: string, isError = false) => {

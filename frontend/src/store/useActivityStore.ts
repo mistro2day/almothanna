@@ -25,7 +25,10 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
   loadingActivities: false,
 
   fetchActivities: async () => {
-    set({ loadingActivities: true });
+    // Only show loading spinner on initial load (empty list) to prevent flickering during auto-polling
+    if (get().activities.length === 0) {
+      set({ loadingActivities: true });
+    }
     try {
       const { data } = await apiClient.get<Activity[]>('/activities');
       set({ activities: data, loadingActivities: false });
