@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useInventoryStore } from '../store/useInventoryStore';
 import { useSalesStore } from '../store/useSalesStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -126,12 +126,15 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
-  // Near-expiry batches from inventory store
-  const nearExpiry = getNearExpiryBatches(6);
+  // Near-expiry batches from inventory store (memoized to prevent heavy loop execution on every render)
+  const nearExpiry = useMemo(() => getNearExpiryBatches(6), [batches, products, getNearExpiryBatches]);
 
-  // Calculate inventory KPIs from local store
-  const totalStockItems     = batches.reduce((sum, b) => sum + b.qty, 0);
-  const totalInventoryValue = batches.reduce((sum, b) => sum + b.qty * b.costPrice, 0);
+  // Calculate inventory KPIs from local store (memoized to prevent redundant array reductions)
+  const { totalStockItems, totalInventoryValue } = useMemo(() => {
+    const totalStock = batches.reduce((sum, b) => sum + b.qty, 0);
+    const totalValue = batches.reduce((sum, b) => sum + b.qty * b.costPrice, 0);
+    return { totalStockItems: totalStock, totalInventoryValue: totalValue };
+  }, [batches]);
 
   // ── Fetch dashboard stats from backend ──────────────────
   useEffect(() => {

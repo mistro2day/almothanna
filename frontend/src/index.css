@@ -87,20 +87,20 @@ body {
 
 /* Glassmorphism Classes */
 .glass-card {
-   background: var(--glass-bg);
-   backdrop-filter: blur(12px);
-   -webkit-backdrop-filter: blur(12px);
-   border: 1px solid var(--glass-border);
-   box-shadow: 0 4px 20px 0 var(--shadow-color);
- }
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 20px 0 var(--shadow-color);
+}
 
 .glass-card-no-backdrop {
-   background: var(--glass-bg);
-   backdrop-filter: none;
-   -webkit-backdrop-filter: none;
-   border: 1px solid var(--glass-border);
-   box-shadow: 0 4px 20px 0 var(--shadow-color);
- }
+  background: var(--glass-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 20px 0 var(--shadow-color);
+}
 
 .glass-card-hover {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -175,6 +175,19 @@ body {
     overflow-x: hidden;
   }
 
+  /* Disable resource-heavy blurs on mobile and replace with solid color to avoid GPU rendering lag */
+  .glass-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--bg-secondary) !important;
+  }
+  
+  /* Disable animation and display of glow effects to save CPU/battery on mobile */
+  .glow-bg {
+    animation: none !important;
+    display: none !important;
+  }
+
   /* Table scroll containers for mobile tables */
   .table-scroll-mobile {
     overflow-x: auto;
@@ -188,22 +201,7 @@ body {
     height: auto;
     border-radius: 1.5rem 1.5rem 0 0;
   }
-}
 
-/* Safe area support for mobile devices with notches */
-@supports (padding: env(safe-area-inset-bottom)) {
-  .safe-area-bottom {
-    padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
-  }
-  
-  .bottom-tabs {
-    padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
-    height: calc(4rem + env(safe-area-inset-bottom));
-  }
-}
-
-/* Minimum touch target size (44px) for mobile */
-@media (max-width: 768px) {
   button, .cursor-pointer {
     min-height: 44px;
     min-width: 44px;
@@ -224,6 +222,18 @@ body {
   .modal-sheet {
     border-radius: 1.5rem;
     max-height: 90vh;
+  }
+}
+
+/* Safe area support for mobile devices with notches */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
+  }
+  
+  .bottom-tabs {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
+    height: calc(4rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -314,4 +324,3 @@ body {
   margin-bottom: 0.35rem;
   display: block;
 }
-
