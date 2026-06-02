@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/apiClient';
 import DatePicker from '../components/DatePicker';
+import { useSalesStore } from '../store/useSalesStore';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -34,7 +35,7 @@ import {
   Cell 
 } from 'recharts';
 
-type TabType = 'sales' | 'inventory' | 'suppliers' | 'customers' | 'shipping';
+type TabType = 'sales' | 'inventory' | 'suppliers' | 'customers' | 'shipping' | 'representatives';
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState<TabType>('sales');
@@ -50,12 +51,28 @@ export default function Reports() {
   const [shippingSearch, setShippingSearch] = useState('');
   const [repSearch, setRepSearch] = useState('');
 
+  // Selected Rep for detailed operations report
+  const [selectedRep, setSelectedRep] = useState<any>(null);
+  const setSelectedInvoiceIdForDetails = useSalesStore((state) => state.setSelectedInvoiceIdForDetails);
+
+  // Sub-tabs inside the representatives view
+  const [repSubTab, setRepSubTab] = useState<'performance' | 'operations'>('performance');
+
+  // Searchable representative dropdown states
+  const [repDropdownOpen, setRepDropdownOpen] = useState(false);
+  const [repFilterSearch, setRepFilterSearch] = useState('');
+
   // Data states
   const [salesData, setSalesData] = useState<any>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [supplierData, setSupplierData] = useState<any>(null);
   const [customerData, setCustomerData] = useState<any>(null);
   const [shippingData, setShippingData] = useState<any>(null);
+
+  // Compile all sales across all representatives
+  const allSales = !salesData ? [] : (salesData.representativesSalesReport || []).reduce((acc: any[], r: any) => {
+    return [...acc, ...(r.sales || []).map((s: any) => ({ ...s, repName: r.name, commissionRate: r.commissionRate }))];
+  }, []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // Quick Date presets
   const applyPreset = (preset: 'today' | 'week' | 'month' | 'clear') => {
@@ -88,7 +105,7 @@ export default function Reports() {
     };
 
     try {
-      if (activeTab === 'sales') {
+      if (activeTab === 'sales' || activeTab === 'representatives') {
         const { data } = await apiClient.get('/reports/sales', { params });
         setSalesData(data);
       } else if (activeTab === 'inventory') {
@@ -115,6 +132,105 @@ export default function Reports() {
   useEffect(() => {
     fetchTabReports();
   }, [activeTab, startDate, endDate]);
+
+  // Sync selected rep details when report data is reloaded
+  useEffect(() => {
+    if (activeTab === 'representatives' && salesData && selectedRep) {
+      const updatedRep = salesData.representativesSalesReport.find((r: any) => r.id === selectedRep.id);
+      if (updatedRep) {
+        setSelectedRep(updatedRep);
+      }
+    }
+  }, [salesData, activeTab]);
+
+  // Premium Excel XML Exporter (Supports RTL direction, proper headers and columns format)
+  const exportToExcelXML = (dataList: any[], filename: string, headers: string[], rowMapper: (item: any) => string[], title: string, subtitle: string) => {
+    let xml = `<?xml version="1.0" encoding="utf-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Bottom"/>
+   <Borders/>
+   <Font ss:FontName="Calibri" x:CharSet="178" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+   <Interior/>
+   <NumberFormat/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="Title">
+   <Font ss:FontName="Calibri" ss:Size="16" ss:Color="#059669" ss:Bold="1"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Subtitle">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#4b5563" ss:Italic="1"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/>
+   <Interior ss:Color="#059669" ss:Pattern="Solid"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Cell">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Sheet1">
+  <Table>
+`;
+
+    // Title
+    xml += '   <Row ss:Height="30">\n';
+    xml += `    <Cell ss:MergeAcross="${headers.length - 1}" ss:StyleID="Title"><Data ss:Type="String">${title}</Data></Cell>\n`;
+    xml += '   </Row>\n';
+
+    // Subtitle / Info
+    xml += '   <Row ss:Height="20">\n';
+    xml += `    <Cell ss:MergeAcross="${headers.length - 1}" ss:StyleID="Subtitle"><Data ss:Type="String">${subtitle}</Data></Cell>\n`;
+    xml += '   </Row>\n';
+
+    // Empty space
+    xml += '   <Row ss:Height="15"></Row>\n';
+
+    // Headers
+    xml += '   <Row ss:Height="25">\n';
+    headers.forEach(h => {
+      xml += `    <Cell ss:StyleID="Header"><Data ss:Type="String">${h}</Data></Cell>\n`;
+    });
+    xml += '   </Row>\n';
+
+    // Rows
+    dataList.forEach(item => {
+      xml += '   <Row ss:Height="20">\n';
+      rowMapper(item).forEach(val => {
+        // Check if value is numeric for formatting
+        const cleanVal = val.replace(/,/g, '').replace(/ SDG/g, '').replace(/%/g, '').trim();
+        const isNum = !isNaN(Number(cleanVal)) && cleanVal !== '';
+        const type = isNum ? 'Number' : 'String';
+        xml += `    <Cell ss:StyleID="Cell"><Data ss:Type="${type}">${cleanVal}</Data></Cell>\n`;
+      });
+      xml += '   </Row>\n';
+    });
+
+    xml += `  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <DisplayRightToLeft/>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${filename}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Export to CSV Function
   const exportToCSV = (dataList: any[], filename: string, headers: string[], rowMapper: (item: any) => string[]) => {
@@ -159,59 +275,13 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* Global Filters Section */}
-        <div className="glass-card p-5 rounded-2xl space-y-4 print:hidden">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Calendar className="w-5 h-5 text-emerald-500" />
-              <span className="text-sm font-bold text-[var(--text-primary)]">تصفية بنطاق التاريخ:</span>
-            </div>
-            
-            <div className="flex flex-wrap gap-2">
-              <button 
-                onClick={() => applyPreset('today')} 
-                className="px-3 py-1.5 rounded-lg text-xs bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-semibold transition-all cursor-pointer"
-              >اليوم</button>
-              <button 
-                onClick={() => applyPreset('week')} 
-                className="px-3 py-1.5 rounded-lg text-xs bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-semibold transition-all cursor-pointer"
-              >آخر 7 أيام</button>
-              <button 
-                onClick={() => applyPreset('month')} 
-                className="px-3 py-1.5 rounded-lg text-xs bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-semibold transition-all cursor-pointer"
-              >الشهر الحالي</button>
-              <button 
-                onClick={() => applyPreset('clear')} 
-                className="px-3 py-1.5 rounded-lg text-xs bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-semibold transition-all cursor-pointer"
-              >تصفير التصفية</button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs text-[var(--text-secondary)] font-semibold block">تاريخ البدء</label>
-              <DatePicker 
-                value={startDate} 
-                onChange={setStartDate} 
-                placeholder="اختر تاريخ البداية" 
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-[var(--text-secondary)] font-semibold block">تاريخ النهاية</label>
-              <DatePicker 
-                value={endDate} 
-                onChange={setEndDate} 
-                placeholder="اختر تاريخ النهاية" 
-              />
-            </div>
-          </div>
-        </div>
 
         {/* Navigation Tabs */}
-        <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-none border-b border-[var(--border-color)] print:hidden">
-          {(['sales', 'inventory', 'suppliers', 'customers', 'shipping'] as TabType[]).map((tab) => {
+        <div className="flex overflow-x-auto gap-2 pb-2 border-b border-[var(--border-color)] print:hidden scrollbar-none flex-nowrap" style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          {(['sales', 'representatives', 'inventory', 'suppliers', 'customers', 'shipping'] as TabType[]).map((tab) => {
             const labels = {
               sales: '📈 تقارير المبيعات والأصناف',
+              representatives: '💼 تقارير وعمولات المناديب',
               inventory: '💊 المخزون الدوائي والصلاحيات',
               suppliers: '🤝 كشوفات الموردين',
               customers: '👥 ديون وحسابات العملاء',
@@ -221,11 +291,12 @@ export default function Reports() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`whitespace-nowrap px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+                className={`shrink-0 flex-shrink-0 whitespace-nowrap px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   activeTab === tab 
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10' 
                     : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]/40 hover:text-[var(--text-primary)]'
                 }`}
+                style={{ flexShrink: 0 }}
               >
                 {labels[tab]}
               </button>
@@ -256,6 +327,54 @@ export default function Reports() {
             {/* 1. SALES TAB CONTENT */}
             {activeTab === 'sales' && salesData && (
               <div className="space-y-6 animate-fade-in-slide">
+                {/* Local Date Filters for Sales */}
+                <div className="glass-card p-4 rounded-2xl border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/30 print:hidden animate-fade-in-slide space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-[var(--text-primary)]">📅 تصفية تقرير المبيعات بنطاق التاريخ:</span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-1.5">
+                      <button 
+                        onClick={() => applyPreset('today')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >اليوم</button>
+                      <button 
+                        onClick={() => applyPreset('week')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >آخر 7 أيام</button>
+                      <button 
+                        onClick={() => applyPreset('month')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >الشهر الحالي</button>
+                      <button 
+                        onClick={() => applyPreset('clear')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >تصفير التصفية</button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ البدء</label>
+                      <DatePicker 
+                        value={startDate} 
+                        onChange={setStartDate} 
+                        placeholder="اختر تاريخ البداية" 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ النهاية</label>
+                      <DatePicker 
+                        value={endDate} 
+                        onChange={setEndDate} 
+                        placeholder="اختر تاريخ النهاية" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Stats Summary Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                   <div className="glass-card p-5 rounded-2xl border-r-4 border-r-emerald-500 flex items-center justify-between">
@@ -427,78 +546,450 @@ export default function Reports() {
                   </div>
                 </div>
 
-                {/* Representatives Sales & Commissions Table */}
-                <div className="glass-card p-5 rounded-2xl space-y-4 text-right">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div className="space-y-1">
-                      <h3 className="text-base font-bold text-[var(--text-primary)]">👥 تقرير أداء وعمولات مناديب المبيعات</h3>
-                      <p className="text-xs text-[var(--text-secondary)]">تتبع مبيعات كل مندوب، المبالغ المحصلة فعلياً والعمولات المستحقة (تُحسب كنسبة من المبالغ المحصلة)</p>
-                    </div>
 
-                    <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl w-full sm:w-64">
-                        <Search className="w-4 h-4 text-[var(--text-secondary)]" />
-                        <input 
-                          type="text" 
-                          placeholder="ابحث باسم المندوب..." 
-                          value={repSearch}
-                          onChange={(e) => setRepSearch(e.target.value)}
-                          className="bg-transparent text-xs outline-none text-[var(--text-primary)] w-full placeholder-[var(--text-secondary)]"
-                        />
-                      </div>
-                      <button 
-                        onClick={() => exportToCSV(
-                          salesData.representativesSalesReport || [], 
-                          'representatives_commissions_report', 
-                          ['اسم المندوب', 'رقم الهاتف', 'نسبة العمولة %', 'عدد العمليات', 'إجمالي المبيعات', 'المبالغ المحصلة فعلياً', 'العمولة المستحقة'],
-                          (rep) => [rep.name, rep.phone || '-', `${rep.commissionRate}%`, rep.salesCount.toString(), rep.totalSales.toString(), rep.totalPaid.toString(), rep.totalCommission.toString()]
-                        )}
-                        className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>تصدير Excel</span>
-                      </button>
+              </div>
+            )}
+
+            {/* 1.5. REPRESENTATIVES TAB CONTENT */}
+            {activeTab === 'representatives' && salesData && (
+              <div className="space-y-6 animate-fade-in-slide print:hidden">
+                {/* Stats Summary Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-emerald-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">إجمالي مبيعات المناديب</span>
+                      <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">
+                        {(salesData.representativesSalesReport || []).reduce((sum: number, r: any) => sum + r.totalSales, 0).toLocaleString()} SDG
+                      </h3>
                     </div>
+                    <div className="p-3 bg-emerald-50/10 text-emerald-500 rounded-xl"><TrendingUp className="w-5 h-5" /></div>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-right border-collapse">
-                      <thead>
-                        <tr className="border-b border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
-                          <th className="py-3 px-4 font-bold">اسم المندوب</th>
-                          <th className="py-3 px-4 font-bold">رقم الهاتف</th>
-                          <th className="py-3 px-4 font-bold">نسبة العمولة</th>
-                          <th className="py-3 px-4 font-bold">عدد فواتير البيع</th>
-                          <th className="py-3 px-4 font-bold">إجمالي المبيعات</th>
-                          <th className="py-3 px-4 font-bold">المحصل الفعلي</th>
-                          <th className="py-3 px-4 font-bold">العمولة المستحقة</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--border-color)]/40 text-xs">
-                        {(!salesData.representativesSalesReport || salesData.representativesSalesReport.length === 0) ? (
-                          <tr>
-                            <td colSpan={7} className="py-8 text-center text-[var(--text-secondary)]">لا توجد مبيعات مسجلة باسم أي مندوب حالياً.</td>
-                          </tr>
-                        ) : (
-                          salesData.representativesSalesReport
-                            .filter((rep: any) => rep.name.toLowerCase().includes(repSearch.toLowerCase()))
-                            .map((rep: any, idx: number) => (
-                              <tr key={idx} className="hover:bg-[var(--border-color)]/20 text-[var(--text-primary)]">
-                                <td className="py-3.5 px-4 font-bold">{rep.name}</td>
-                                <td className="py-3.5 px-4 text-[var(--text-secondary)] font-mono">{rep.phone || '-'}</td>
-                                <td className="py-3.5 px-4"><span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-500 font-bold">{rep.commissionRate}%</span></td>
-                                <td className="py-3.5 px-4 font-bold font-mono">{rep.salesCount.toLocaleString()} عملية</td>
-                                <td className="py-3.5 px-4 font-mono">{rep.totalSales.toLocaleString()} SDG</td>
-                                <td className="py-3.5 px-4 font-mono text-blue-500 font-semibold">{rep.totalPaid.toLocaleString()} SDG</td>
-                                <td className="py-3.5 px-4 font-bold font-mono text-emerald-500">{rep.totalCommission.toLocaleString()} SDG</td>
-                              </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-indigo-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">إجمالي العمولات المستحقة</span>
+                      <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">{(salesData.summary.totalRepresentativeCommissions || 0).toLocaleString()} SDG</h3>
+                    </div>
+                    <div className="p-3 bg-indigo-50/10 text-indigo-500 rounded-xl"><Users className="w-5 h-5" /></div>
+                  </div>
+
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-blue-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">عدد المناديب النشطين</span>
+                      <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">{salesData.representativesSalesReport?.length || 0} مندوب</h3>
+                    </div>
+                    <div className="p-3 bg-blue-50/10 text-blue-500 rounded-xl"><Users className="w-5 h-5" /></div>
+                  </div>
+
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-amber-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">المندوب الأعلى مبيعات</span>
+                      <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                        {salesData.representativesSalesReport?.[0]?.name || 'غير محدد'}
+                      </h3>
+                      <p className="text-[10px] font-semibold text-[var(--text-secondary)]">
+                        بمبيعات: {(salesData.representativesSalesReport?.[0]?.totalSales || 0).toLocaleString()} SDG
+                      </p>
+                    </div>
+                    <div className="p-3 bg-amber-50/10 text-amber-500 rounded-xl"><TrendingUp className="w-5 h-5" /></div>
                   </div>
                 </div>
 
+                {/* Sub-tabs Navigation */}
+                <div className="flex gap-2 border-b border-[var(--border-color)] pb-px">
+                  <button
+                    onClick={() => setRepSubTab('performance')}
+                    className={`pb-2.5 px-4 font-bold text-xs sm:text-sm transition-all border-b-2 cursor-pointer ${
+                      repSubTab === 'performance'
+                        ? 'border-emerald-500 text-emerald-500'
+                        : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    👥 أداء وعمولات المناديب
+                  </button>
+                  <button
+                    onClick={() => setRepSubTab('operations')}
+                    className={`pb-2.5 px-4 font-bold text-xs sm:text-sm transition-all border-b-2 cursor-pointer ${
+                      repSubTab === 'operations'
+                        ? 'border-emerald-500 text-emerald-500'
+                        : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    📝 سجل فواتير وعمولات العمليات التفصيلي {selectedRep ? `(${selectedRep.name})` : '(كافة المناديب)'}
+                  </button>
+                </div>
+
+                {/* Local Filters for Representatives */}
+                <div className="glass-card p-4 rounded-2xl border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/30 print:hidden animate-fade-in-slide flex flex-col xl:flex-row xl:items-center justify-between gap-4 relative z-50">
+                  {/* Left Side: Rep Select Dropdown */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-[var(--text-primary)]">👤 اختيار المندوب:</span>
+                    </div>
+                    {/* Searchable Dropdown */}
+                    <div className="relative z-30">
+                      <button
+                        type="button"
+                        onClick={() => setRepDropdownOpen(!repDropdownOpen)}
+                        className="flex items-center justify-between gap-2 bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)] font-bold border border-[var(--border-color)] px-4 py-2 rounded-xl outline-none cursor-pointer hover:border-emerald-500 transition-colors w-64 text-right"
+                      >
+                        <span>{selectedRep ? `👤 ${selectedRep.name}` : '📁 كافة مناديب المبيعات'}</span>
+                        <span className="text-[10px] text-[var(--text-secondary)]">▼</span>
+                      </button>
+
+                      {repDropdownOpen && (
+                        <>
+                          {/* Backdrop */}
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => { setRepDropdownOpen(false); setRepFilterSearch(''); }}
+                          />
+                          
+                          {/* Search dropdown list */}
+                          <div className="absolute right-0 mt-1.5 w-64 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-xl z-50 p-2 space-y-2 animate-fade-in-slide">
+                            <input
+                              type="text"
+                              placeholder="ابحث باسم المندوب..."
+                              value={repFilterSearch}
+                              onChange={(e) => setRepFilterSearch(e.target.value)}
+                              className="w-full bg-[var(--bg-primary)] text-xs text-[var(--text-primary)] border border-[var(--border-color)] px-2.5 py-1.5 rounded-lg outline-none placeholder-[var(--text-secondary)]"
+                              autoFocus
+                            />
+                            
+                            <div className="max-h-48 overflow-y-auto space-y-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRep(null);
+                                  setRepDropdownOpen(false);
+                                  setRepFilterSearch('');
+                                }}
+                                className={`w-full text-right px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  !selectedRep ? 'bg-emerald-500/10 text-emerald-500' : 'text-[var(--text-primary)] hover:bg-[var(--border-color)]/30'
+                                }`}
+                              >
+                                📁 كافة مناديب المبيعات (تقرير شامل)
+                              </button>
+
+                              {salesData.representativesSalesReport
+                                ?.filter((rep: any) => rep.name.toLowerCase().includes(repFilterSearch.toLowerCase()))
+                                .map((rep: any, idx: number) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedRep(rep);
+                                      setRepDropdownOpen(false);
+                                      setRepFilterSearch('');
+                                      setRepSubTab('operations');
+                                    }}
+                                    className={`w-full text-right px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                      selectedRep?.id === rep.id ? 'bg-emerald-500/10 text-emerald-500' : 'text-[var(--text-primary)] hover:bg-[var(--border-color)]/30'
+                                    }`}
+                                  >
+                                    👤 {rep.name}
+                                  </button>
+                                ))
+                              }
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Side: Compact Date Filters in the Same Row */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-[var(--text-primary)]">📅 التصفية بالتاريخ:</span>
+                    </div>
+                    
+                    {/* Presets */}
+                    <div className="flex flex-wrap gap-1">
+                      <button 
+                        onClick={() => applyPreset('today')} 
+                        className="px-2 py-1 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >اليوم</button>
+                      <button 
+                        onClick={() => applyPreset('week')} 
+                        className="px-2 py-1 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >آخر 7 أيام</button>
+                      <button 
+                        onClick={() => applyPreset('month')} 
+                        className="px-2 py-1 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >الشهر</button>
+                      <button 
+                        onClick={() => applyPreset('clear')} 
+                        className="px-2 py-1 rounded-lg text-[10px] bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >تصفير</button>
+                    </div>
+
+                    <div className="w-px h-6 bg-[var(--border-color)] hidden sm:block" />
+
+                    {/* Date Pickers */}
+                    <div className="flex items-center gap-1.5">
+                      <DatePicker 
+                        value={startDate} 
+                        onChange={setStartDate} 
+                        placeholder="تاريخ البدء" 
+                      />
+                      <span className="text-[10px] text-[var(--text-secondary)] font-bold">إلى</span>
+                      <DatePicker 
+                        value={endDate} 
+                        onChange={setEndDate} 
+                        placeholder="تاريخ النهاية" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Representatives List (Table) - FULL WIDTH */}
+                  {repSubTab === 'performance' && (
+                    <div className="glass-card p-5 rounded-2xl space-y-4 text-right animate-fade-in-slide">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="space-y-1">
+                          <h3 className="text-base font-bold text-[var(--text-primary)]">👥 جدول أداء وعمولات مناديب المبيعات</h3>
+                          <p className="text-xs text-[var(--text-secondary)]">اضغط على أي مندوب في الجدول أدناه لتصفية سجل العمليات والفواتير عليه، أو تصفح التقرير الشامل</p>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl w-full sm:w-56">
+                            <Search className="w-4 h-4 text-[var(--text-secondary)]" />
+                            <input 
+                              type="text" 
+                              placeholder="ابحث باسم المندوب..." 
+                              value={repSearch}
+                              onChange={(e) => setRepSearch(e.target.value)}
+                              className="bg-transparent text-xs outline-none text-[var(--text-primary)] w-full placeholder-[var(--text-secondary)]"
+                            />
+                          </div>
+                          <button 
+                            onClick={() => exportToExcelXML(
+                              salesData.representativesSalesReport || [], 
+                              'representatives_performance_report', 
+                              ['اسم المندوب', 'رقم الهاتف', 'نسبة العمولة %', 'عدد الفواتير', 'إجمالي المبيعات', 'المبالغ المحصلة', 'العمولة المستحقة'],
+                              (rep) => [rep.name, rep.phone || '-', `${rep.commissionRate}%`, rep.salesCount.toString(), rep.totalSales.toString(), rep.totalPaid.toString(), rep.totalCommission.toString()],
+                              'تقرير الأداء العام والعمولات لمناديب المبيعات',
+                              `عدد المناديب الإجمالي: ${salesData.representativesSalesReport?.length || 0} | إجمالي المبيعات: ${salesData.representativesSalesReport?.reduce((s: number, r: any) => s + r.totalSales, 0).toLocaleString()} SDG`
+                            )}
+                            className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer shrink-0"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>تصدير القائمة (Excel)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                              <th className="py-3 px-4 font-bold">اسم المندوب</th>
+                              <th className="py-3 px-4 font-bold">رقم الهاتف</th>
+                              <th className="py-3 px-4 font-bold">العمولة %</th>
+                              <th className="py-3 px-4 font-bold">عدد فواتير البيع</th>
+                              <th className="py-3 px-4 font-bold">إجمالي المبيعات</th>
+                              <th className="py-3 px-4 font-bold">المحصل الفعلي</th>
+                              <th className="py-3 px-4 font-bold">العمولة المستحقة</th>
+                              <th className="py-3 px-4 font-bold text-center">الإجراءات</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--border-color)]/40">
+                            {(!salesData.representativesSalesReport || salesData.representativesSalesReport.length === 0) ? (
+                              <tr>
+                                <td colSpan={8} className="py-8 text-center text-[var(--text-secondary)]">لا توجد مبيعات مسجلة باسم أي مندوب حالياً.</td>
+                              </tr>
+                            ) : (
+                              salesData.representativesSalesReport
+                                .filter((rep: any) => rep.name.toLowerCase().includes(repSearch.toLowerCase()))
+                                .map((rep: any, idx: number) => (
+                                  <tr 
+                                    key={idx} 
+                                    onClick={() => { setSelectedRep(rep); setRepSubTab('operations'); }}
+                                    className={`hover:bg-[var(--border-color)]/20 cursor-pointer text-[var(--text-primary)] transition-all ${
+                                      selectedRep?.id === rep.id ? 'bg-emerald-500/10 border-r-4 border-r-emerald-500 font-semibold' : ''
+                                    }`}
+                                  >
+                                    <td className="py-3.5 px-4 font-bold">{rep.name}</td>
+                                    <td className="py-3.5 px-4 font-mono text-[var(--text-secondary)]">{rep.phone || '-'}</td>
+                                    <td className="py-3.5 px-4"><span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-500 font-bold">{rep.commissionRate}%</span></td>
+                                    <td className="py-3.5 px-4 font-mono">{rep.salesCount.toLocaleString()} عملية</td>
+                                    <td className="py-3.5 px-4 font-mono">{rep.totalSales.toLocaleString()} SDG</td>
+                                    <td className="py-3.5 px-4 font-mono text-blue-500">{rep.totalPaid.toLocaleString()} SDG</td>
+                                    <td className="py-3.5 px-4 font-bold font-mono text-emerald-500">{rep.totalCommission.toLocaleString()} SDG</td>
+                                    <td className="py-3.5 px-4 text-center">
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); setSelectedRep(rep); setRepSubTab('operations'); }}
+                                        className="px-3 py-1 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer animate-pulse-subtle"
+                                      >
+                                        تصفية فواتيره ({rep.salesCount})
+                                      </button>
+                                    </td>
+                                  </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Comprehensive Financial Operations Table - FULL WIDTH */}
+                  {repSubTab === 'operations' && (
+                    <div className="glass-card p-5 rounded-2xl space-y-5 text-right border border-emerald-500/10 animate-fade-in-slide">
+                      {/* Header Details */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[var(--border-color)]/60 pb-3">
+                        <div>
+                          {selectedRep && (
+                            <button 
+                              onClick={() => setSelectedRep(null)} 
+                              className="text-xs text-indigo-500 hover:text-indigo-600 flex items-center gap-1 font-bold mb-2 cursor-pointer"
+                            >
+                              <span>🗂️ إلغاء التصفية (عرض عمليات كافة المناديب)</span>
+                            </button>
+                          )}
+                          <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest block">
+                            {selectedRep ? 'كشف حساب عمليات المندوب المفصل' : 'التقرير المالي والعمليات الشامل'}
+                          </span>
+                          <h3 className="text-base font-bold text-[var(--text-primary)] mt-0.5">
+                            {selectedRep ? `سجل فواتير المندوب: ${selectedRep.name}` : 'سجل فواتير وعمولات كافة مناديب المبيعات'}
+                          </h3>
+                          <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                            {selectedRep ? `رقم الهاتف: ${selectedRep.phone || '-'}` : `إجمالي الفواتير النشطة: ${allSales.length} فاتورة`}
+                          </p>
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                          {/* Summary Pill Panel */}
+                          <div className="flex gap-2 text-xs">
+                            <div className="px-3 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
+                              <span className="text-[9px] text-[var(--text-secondary)] block">إجمالي مبيعات الفلتر</span>
+                              <strong className="font-mono text-[var(--text-primary)]">
+                                {selectedRep 
+                                  ? selectedRep.totalSales.toLocaleString() 
+                                  : allSales.reduce((s: number, sa: any) => s + sa.total, 0).toLocaleString()
+                                } SDG
+                              </strong>
+                            </div>
+                            <div className="px-3 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
+                              <span className="text-[9px] text-[var(--text-secondary)] block">إجمالي عمولات الفلتر</span>
+                              <strong className="font-mono text-emerald-500">
+                                {selectedRep 
+                                  ? selectedRep.totalCommission.toLocaleString() 
+                                  : salesData.summary.totalRepresentativeCommissions.toLocaleString()
+                                } SDG
+                              </strong>
+                            </div>
+                          </div>
+
+                          {/* Export & Print Options */}
+                          <div className="flex gap-2 w-full sm:w-auto">
+                            <button 
+                              onClick={() => {
+                                const targetSales = selectedRep ? selectedRep.sales : allSales;
+                                const fileName = selectedRep ? `operations_${selectedRep.name}` : 'operations_all_representatives';
+                                const sheetTitle = selectedRep ? `كشف حساب عمليات المندوب: ${selectedRep.name}` : 'كشف حساب عمليات كافة مناديب المبيعات';
+                                const sheetSubtitle = selectedRep 
+                                  ? `رقم المندوب: ${selectedRep.phone || '-'} | عمولته: ${selectedRep.commissionRate}% | المبيعات: ${selectedRep.totalSales.toLocaleString()} SDG | العمولة المستحقة: ${selectedRep.totalCommission.toLocaleString()} SDG`
+                                  : `عدد المناديب الإجمالي: ${salesData.representativesSalesReport?.length || 0} | مبيعاتهم الكلية: ${allSales.reduce((s: number, sa: any) => s + sa.total, 0).toLocaleString()} SDG | العمولات المستحقة: ${salesData.summary.totalRepresentativeCommissions.toLocaleString()} SDG`;
+
+                                exportToExcelXML(
+                                  targetSales, 
+                                  fileName, 
+                                  selectedRep 
+                                    ? ['رقم الفاتورة', 'تاريخ الفاتورة', 'اسم العميل', 'إجمالي الفاتورة', 'المحصل الفعلي', 'العمولة المحتسبة', 'حالة السداد']
+                                    : ['رقم الفاتورة', 'تاريخ الفاتورة', 'المندوب', 'العميل', 'إجمالي الفاتورة', 'المحصل الفعلي', 'عمولة المندوب', 'حالة السداد'],
+                                  (s) => selectedRep 
+                                    ? [s.id.slice(0, 8), s.createdAt.split('T')[0], s.customerName, s.total.toString(), s.paid.toString(), s.commission.toString(), s.status]
+                                    : [s.id.slice(0, 8), s.createdAt.split('T')[0], s.repName || '-', s.customerName, s.total.toString(), s.paid.toString(), s.commission.toString(), s.status],
+                                  sheetTitle,
+                                  sheetSubtitle
+                                );
+                              }}
+                              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>تصدير كشف الحساب (Excel)</span>
+                            </button>
+                            <button 
+                              onClick={handlePrint}
+                              className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>طباعة كشف الحساب</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Operations Table */}
+                      <div className="space-y-2">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-right border-collapse text-xs">
+                            <thead>
+                              <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                                <th className="py-2.5 px-3 font-bold">رقم الفاتورة</th>
+                                <th className="py-2.5 px-3 font-bold">تاريخ الفاتورة</th>
+                                {!selectedRep && <th className="py-2.5 px-3 font-bold">👤 المندوب</th>}
+                                <th className="py-2.5 px-3 font-bold">🤝 العميل</th>
+                                <th className="py-2.5 px-3 font-bold">إجمالي الفاتورة</th>
+                                <th className="py-2.5 px-3 font-bold">المحصل الفعلي</th>
+                                <th className="py-2.5 px-3 font-bold">العمولة المحتسبة</th>
+                                <th className="py-2.5 px-3 font-bold">الحالة</th>
+                                <th className="py-2.5 px-3 font-bold text-center">إجراءات</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                              {((selectedRep ? selectedRep.sales : allSales).length === 0) ? (
+                                <tr>
+                                  <td colSpan={selectedRep ? 8 : 9} className="py-12 text-center text-[var(--text-secondary)]">
+                                    لا توجد فواتير أو عمليات مسجلة تحت هذا الفلتر حالياً.
+                                  </td>
+                                </tr>
+                              ) : (
+                                (selectedRep ? selectedRep.sales : allSales).map((sale: any, index: number) => (
+                                  <tr key={index} className="hover:bg-[var(--border-color)]/20 transition-colors">
+                                    <td className="py-3 px-3 font-mono font-bold text-[var(--text-secondary)]">#{sale.id.slice(0, 8)}</td>
+                                    <td className="py-3 px-3 font-mono">{sale.createdAt.split('T')[0]}</td>
+                                    {!selectedRep && (
+                                      <td className="py-3 px-3 font-bold">
+                                        {sale.repName} <span className="text-[10px] text-[var(--text-secondary)] font-normal font-mono">({sale.commissionRate}%)</span>
+                                      </td>
+                                    )}
+                                    <td className="py-3 px-3 font-bold">{sale.customerName}</td>
+                                    <td className="py-3 px-3 font-mono">{sale.total.toLocaleString()} SDG</td>
+                                    <td className="py-3 px-3 font-mono text-blue-500 font-semibold">{sale.paid.toLocaleString()} SDG</td>
+                                    <td className="py-3 px-3 font-mono font-bold text-emerald-500">{sale.commission.toLocaleString()} SDG</td>
+                                    <td className="py-3 px-3">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                        sale.status === 'PAID' 
+                                          ? 'bg-emerald-500/10 text-emerald-500' 
+                                          : sale.status === 'PARTIAL' 
+                                          ? 'bg-amber-500/10 text-amber-500'
+                                          : 'bg-rose-500/10 text-rose-500'
+                                      }`}>{sale.status === 'PAID' ? 'مدفوعة' : sale.status === 'PARTIAL' ? 'جزئية' : 'معلقة'}</span>
+                                    </td>
+                                    <td className="py-3 px-3 text-center">
+                                      <button
+                                        onClick={() => setSelectedInvoiceIdForDetails(sale.id)}
+                                        className="px-2.5 py-1.5 bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                                      >
+                                        عرض الفاتورة 🔗
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -628,6 +1119,53 @@ export default function Reports() {
             {/* 3. SUPPLIER TAB CONTENT */}
             {activeTab === 'suppliers' && supplierData && (
               <div className="space-y-6 animate-fade-in-slide">
+                {/* Local Date Filters for Suppliers */}
+                <div className="glass-card p-4 rounded-2xl border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/30 print:hidden animate-fade-in-slide space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-[var(--text-primary)]">📅 تصفية كشوفات الموردين بنطاق التاريخ:</span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-1.5">
+                      <button 
+                        onClick={() => applyPreset('today')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >اليوم</button>
+                      <button 
+                        onClick={() => applyPreset('week')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >آخر 7 أيام</button>
+                      <button 
+                        onClick={() => applyPreset('month')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >الشهر الحالي</button>
+                      <button 
+                        onClick={() => applyPreset('clear')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >تصفير التصفية</button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ البدء</label>
+                      <DatePicker 
+                        value={startDate} 
+                        onChange={setStartDate} 
+                        placeholder="اختر تاريخ البداية" 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ النهاية</label>
+                      <DatePicker 
+                        value={endDate} 
+                        onChange={setEndDate} 
+                        placeholder="اختر تاريخ النهاية" 
+                      />
+                    </div>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="glass-card p-5 rounded-2xl border-r-4 border-r-emerald-500 flex items-center justify-between">
                     <div className="space-y-1">
@@ -734,6 +1272,53 @@ export default function Reports() {
             {/* 4. CUSTOMERS TAB CONTENT */}
             {activeTab === 'customers' && customerData && (
               <div className="space-y-6 animate-fade-in-slide">
+                {/* Local Date Filters for Customers */}
+                <div className="glass-card p-4 rounded-2xl border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/30 print:hidden animate-fade-in-slide space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-[var(--text-primary)]">📅 تصفية ديون وحسابات العملاء بنطاق التاريخ:</span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-1.5">
+                      <button 
+                        onClick={() => applyPreset('today')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >اليوم</button>
+                      <button 
+                        onClick={() => applyPreset('week')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >آخر 7 أيام</button>
+                      <button 
+                        onClick={() => applyPreset('month')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >الشهر الحالي</button>
+                      <button 
+                        onClick={() => applyPreset('clear')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >تصفير التصفية</button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ البدء</label>
+                      <DatePicker 
+                        value={startDate} 
+                        onChange={setStartDate} 
+                        placeholder="اختر تاريخ البداية" 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ النهاية</label>
+                      <DatePicker 
+                        value={endDate} 
+                        onChange={setEndDate} 
+                        placeholder="اختر تاريخ النهاية" 
+                      />
+                    </div>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="glass-card p-5 rounded-2xl border-r-4 border-r-emerald-500 flex items-center justify-between">
                     <div className="space-y-1">
@@ -866,6 +1451,53 @@ export default function Reports() {
             {/* 5. SHIPPING TAB CONTENT */}
             {activeTab === 'shipping' && shippingData && (
               <div className="space-y-6 animate-fade-in-slide">
+                {/* Local Date Filters for Shipping */}
+                <div className="glass-card p-4 rounded-2xl border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/30 print:hidden animate-fade-in-slide space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-[var(--text-primary)]">📅 تصفية اللوجستيات والشحن بنطاق التاريخ:</span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-1.5">
+                      <button 
+                        onClick={() => applyPreset('today')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >اليوم</button>
+                      <button 
+                        onClick={() => applyPreset('week')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >آخر 7 أيام</button>
+                      <button 
+                        onClick={() => applyPreset('month')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >الشهر الحالي</button>
+                      <button 
+                        onClick={() => applyPreset('clear')} 
+                        className="px-2.5 py-1.5 rounded-lg text-[10px] bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-bold transition-all cursor-pointer"
+                      >تصفير التصفية</button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ البدء</label>
+                      <DatePicker 
+                        value={startDate} 
+                        onChange={setStartDate} 
+                        placeholder="اختر تاريخ البداية" 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ النهاية</label>
+                      <DatePicker 
+                        value={endDate} 
+                        onChange={setEndDate} 
+                        placeholder="اختر تاريخ النهاية" 
+                      />
+                    </div>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="glass-card p-5 rounded-2xl border-r-4 border-r-blue-500 flex items-center justify-between">
                     <div className="space-y-1">
@@ -1033,6 +1665,123 @@ export default function Reports() {
           </div>
         )}
       </div>
+
+      {/* Printable Rep Statement Layout */}
+      {activeTab === 'representatives' && salesData && (
+        <div className="hidden print:block print-section w-full text-right p-8 space-y-6" dir="rtl">
+          <style>{`
+            @media print {
+              /* Hide all components of the application layout */
+              aside, nav, header, .sidebar, .navbar, button, .print\\:hidden, #root > *:not(.print-section) {
+                display: none !important;
+              }
+              /* Show ONLY the print section */
+              body, html, #root {
+                background: white !important;
+                color: black !important;
+                overflow: visible !important;
+                height: auto !important;
+              }
+              .print-section {
+                display: block !important;
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                direction: rtl !important;
+                text-align: right !important;
+              }
+              .print-section * {
+                visibility: visible !important;
+              }
+            }
+          `}</style>
+          
+          {/* Letterhead */}
+          <div className="flex justify-between items-center border-b-2 border-emerald-600 pb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-emerald-700">المثنى للأدوية</h1>
+              <p className="text-xs text-gray-500">قسم الحسابات والعمولات والمناديب</p>
+            </div>
+            <div className="text-left text-xs text-gray-500">
+              <p>التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+              <p>كشف مالي رسمي للمبيعات والعمولات</p>
+            </div>
+          </div>
+
+          {/* Rep Summary Card */}
+          <div className="border border-emerald-200 bg-emerald-50/10 p-5 rounded-xl space-y-3">
+            <h2 className="text-lg font-bold text-emerald-800">
+              {selectedRep ? `كشف حساب عمليات المندوب: ${selectedRep.name}` : 'كشف حساب عمليات كافة مناديب المبيعات'}
+            </h2>
+            <div className="grid grid-cols-3 gap-4 text-xs text-gray-700">
+              {selectedRep ? (
+                <>
+                  <div><strong>رقم الهاتف:</strong> {selectedRep.phone || '-'}</div>
+                  <div><strong>نسبة العمولة:</strong> {selectedRep.commissionRate}%</div>
+                  <div><strong>إجمالي العمليات:</strong> {selectedRep.salesCount} عملية</div>
+                  <div><strong>إجمالي المبيعات:</strong> {selectedRep.totalSales.toLocaleString()} SDG</div>
+                  <div><strong>المحصل الفعلي:</strong> {selectedRep.totalPaid.toLocaleString()} SDG</div>
+                  <div><strong>إجمالي العمولة المستحقة:</strong> {selectedRep.totalCommission.toLocaleString()} SDG</div>
+                </>
+              ) : (
+                <>
+                  <div><strong>عدد المناديب:</strong> {salesData.representativesSalesReport?.length || 0} مندوب</div>
+                  <div><strong>إجمالي العمليات:</strong> {allSales.length} عملية</div>
+                  <div><strong>نوع التقرير:</strong> شامل لكافة مناديب المبيعات</div>
+                  <div><strong>إجمالي المبيعات الكلية:</strong> {allSales.reduce((sum: number, s: any) => sum + s.total, 0).toLocaleString()} SDG</div>
+                  <div><strong>المحصل الفعلي:</strong> {allSales.reduce((sum: number, s: any) => sum + s.paid, 0).toLocaleString()} SDG</div>
+                  <div><strong>إجمالي العمولات المستحقة:</strong> {salesData.summary.totalRepresentativeCommissions.toLocaleString()} SDG</div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Invoices Table */}
+          <table className="w-full text-right border-collapse border border-gray-300 text-xs">
+            <thead>
+              <tr className="bg-emerald-600 text-white">
+                <th className="border border-gray-300 py-2.5 px-3">رقم الفاتورة</th>
+                <th className="border border-gray-300 py-2.5 px-3">تاريخ الفاتورة</th>
+                <th className="border border-gray-300 py-2.5 px-3">المندوب</th>
+                <th className="border border-gray-300 py-2.5 px-3">اسم العميل</th>
+                <th className="border border-gray-300 py-2.5 px-3">إجمالي المبيعات</th>
+                <th className="border border-gray-300 py-2.5 px-3">المحصل الفعلي</th>
+                <th className="border border-gray-300 py-2.5 px-3">العمولة المحتسبة</th>
+                <th className="border border-gray-300 py-2.5 px-3">حالة السداد</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(selectedRep ? selectedRep.sales : allSales).map((sale: any, index: number) => (
+                <tr key={index} className="hover:bg-gray-50 text-gray-800">
+                  <td className="border border-gray-300 py-2 px-3 font-mono">#{sale.id.slice(0, 8)}</td>
+                  <td className="border border-gray-300 py-2 px-3 font-mono">{sale.createdAt.split('T')[0]}</td>
+                  <td className="border border-gray-300 py-2 px-3 font-bold">{sale.repName || selectedRep?.name || '-'}</td>
+                  <td className="border border-gray-300 py-2 px-3 font-bold">{sale.customerName}</td>
+                  <td className="border border-gray-300 py-2 px-3 font-mono">{sale.total.toLocaleString()} SDG</td>
+                  <td className="border border-gray-300 py-2 px-3 font-mono">{sale.paid.toLocaleString()} SDG</td>
+                  <td className="border border-gray-300 py-2 px-3 font-mono font-bold text-emerald-700">{sale.commission.toLocaleString()} SDG</td>
+                  <td className="border border-gray-300 py-2 px-3">
+                    {sale.status === 'PAID' ? 'تم الدفع بالكامل' : sale.status === 'PARTIAL' ? 'دفع جزئي' : 'قيد الانتظار'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Signatures */}
+          <div className="flex justify-between items-center pt-16 text-xs">
+            <div className="text-center space-y-4">
+              <p>توقيع المندوب المالي / المحاسب</p>
+              <p className="border-t border-gray-400 w-40 pt-1 mx-auto"></p>
+            </div>
+            <div className="text-center space-y-4">
+              <p>الختم الرسمي والتوقيع</p>
+              <p className="border-t border-gray-400 w-40 pt-1 mx-auto"></p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

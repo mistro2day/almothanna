@@ -297,36 +297,39 @@ export default function Customers() {
         </div>
 
         {/* Dynamic Navigation Tabs */}
-        <div className="flex overflow-x-auto gap-2 pb-2 border-b border-[var(--border-color)]">
+        <div className="flex overflow-x-auto gap-2 pb-2 border-b border-[var(--border-color)] scrollbar-none flex-nowrap" style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <button
             onClick={() => { setActiveTab('customers'); setSearch(''); }}
-            className={`whitespace-nowrap px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+            className={`shrink-0 flex-shrink-0 whitespace-nowrap px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeTab === 'customers' 
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10' 
                 : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]/40 hover:text-[var(--text-primary)]'
             }`}
+            style={{ flexShrink: 0 }}
           >
             👥 سجل العملاء والصيدليات
           </button>
           
           <button
             onClick={() => { setActiveTab('representatives'); setSearch(''); }}
-            className={`whitespace-nowrap px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+            className={`shrink-0 flex-shrink-0 whitespace-nowrap px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeTab === 'representatives' 
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10' 
                 : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]/40 hover:text-[var(--text-primary)]'
             }`}
+            style={{ flexShrink: 0 }}
           >
             💼 مناديب المبيعات والعمولات
           </button>
 
           <button
             onClick={() => { setActiveTab('shipping'); setSearch(''); }}
-            className={`whitespace-nowrap px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+            className={`shrink-0 flex-shrink-0 whitespace-nowrap px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeTab === 'shipping' 
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10' 
                 : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]/40 hover:text-[var(--text-primary)]'
             }`}
+            style={{ flexShrink: 0 }}
           >
             🚚 شحن وتوزيع الولايات
           </button>

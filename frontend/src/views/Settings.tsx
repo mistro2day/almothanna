@@ -41,6 +41,22 @@ export default function Settings() {
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Pagination states for activities log
+  const [activityCurrentPage, setActivityCurrentPage] = useState(1);
+  const [activityPageSize, setActivityPageSize] = useState(10);
+
+  const paginatedActivities = React.useMemo(() => {
+    const startIndex = (activityCurrentPage - 1) * activityPageSize;
+    return activities.slice(startIndex, startIndex + activityPageSize);
+  }, [activities, activityCurrentPage, activityPageSize]);
+
+  const totalActivityPages = Math.ceil(activities.length / activityPageSize);
+
+  // Reset page to 1 when settings change
+  useEffect(() => {
+    setActivityCurrentPage(1);
+  }, [activityPageSize, activities.length]);
+
   // Company Form State
   const [companyForm, setCompanyForm] = useState<Partial<CompanySettings>>({});
   
@@ -218,36 +234,39 @@ export default function Settings() {
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-[var(--border-color)]">
+      <div className="flex border-b border-[var(--border-color)] scrollbar-none flex-nowrap overflow-x-auto" style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <button
           onClick={() => setActiveSubTab('company')}
-          className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer shrink-0 flex-shrink-0 whitespace-nowrap ${
             activeSubTab === 'company'
               ? 'border-emerald-500 text-emerald-500 bg-emerald-500/5'
               : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
           }`}
+          style={{ flexShrink: 0 }}
         >
           <Building className="w-4 h-4" />
           <span>بيانات الشركة</span>
         </button>
         <button
           onClick={() => setActiveSubTab('users')}
-          className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer shrink-0 flex-shrink-0 whitespace-nowrap ${
             activeSubTab === 'users'
               ? 'border-emerald-500 text-emerald-500 bg-emerald-500/5'
               : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
           }`}
+          style={{ flexShrink: 0 }}
         >
           <Users className="w-4 h-4" />
           <span>المستخدمين والصلاحيات</span>
         </button>
         <button
           onClick={() => setActiveSubTab('activities')}
-          className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer shrink-0 flex-shrink-0 whitespace-nowrap ${
             activeSubTab === 'activities'
               ? 'border-emerald-500 text-emerald-500 bg-emerald-500/5'
               : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
           }`}
+          style={{ flexShrink: 0 }}
         >
           <Activity className="w-4 h-4" />
           <span>النشاطات (Activities)</span>
@@ -436,8 +455,8 @@ export default function Settings() {
                   <p className="mt-3 text-[var(--text-secondary)]">جاري تحميل المستخدمين...</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right text-sm">
+                <div className="overflow-x-auto whitespace-nowrap table-scroll-mobile">
+                  <table className="w-full text-right text-xs sm:text-sm min-w-[750px] sm:min-w-full border-collapse">
                     <thead>
                       <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
                         <th className="pb-3 pr-2">الاسم</th>
@@ -510,12 +529,30 @@ export default function Settings() {
                 متابعة شاملة لكافة العمليات والأنشطة التي تتم داخل المشروع مع تحديد اسم المستخدم المسؤول.
               </p>
             </div>
-            <button
-              onClick={() => fetchActivities()}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 rounded-xl text-xs font-bold transition-all cursor-pointer border border-emerald-500/20"
-            >
-              <span>تحديث السجل</span>
-            </button>
+            
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-[var(--text-secondary)]">عرض:</span>
+                <select
+                  value={activityPageSize}
+                  onChange={(e) => setActivityPageSize(Number(e.target.value))}
+                  className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] font-bold px-3 py-2 rounded-xl outline-none cursor-pointer hover:border-emerald-500 transition-colors text-right"
+                  dir="rtl"
+                >
+                  <option value={10}>10 نشاطات</option>
+                  <option value={20}>20 نشاطاً</option>
+                  <option value={50}>50 نشاطاً</option>
+                  <option value={100}>100 نشاط</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => fetchActivities()}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 rounded-xl text-xs font-bold transition-all cursor-pointer border border-emerald-500/20"
+              >
+                <span>تحديث السجل</span>
+              </button>
+            </div>
           </div>
 
           {loadingActivities ? (
@@ -528,44 +565,74 @@ export default function Settings() {
               لا توجد نشاطات مسجلة حالياً في النظام.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
-                    <th className="pb-3 pr-2">المستخدم</th>
-                    <th className="pb-3 text-center">العملية / النشاط</th>
-                    <th className="pb-3 text-right">التفاصيل</th>
-                    <th className="pb-3 text-left">الوقت والتاريخ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border-color)]">
-                  {activities.map((act) => (
-                    <tr key={act.id} className="hover:bg-[var(--border-color)]/20 transition-colors">
-                      <td className="py-4 pr-2">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs">
-                            {act.user?.name ? act.user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : '؟'}
-                          </div>
-                          <div className="text-right">
-                            <div className="font-semibold text-[var(--text-primary)]">{act.user?.name || 'مستخدم غير معروف'}</div>
-                            <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--border-color)]/40 px-1.5 py-0.5 rounded">
-                              {roleLabels[act.user?.role] || act.user?.role || '---'}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 text-center font-bold text-emerald-500">{act.action}</td>
-                      <td className="py-4 text-right text-[var(--text-secondary)] max-w-md break-words">{act.details}</td>
-                      <td className="py-4 text-left font-mono text-[var(--text-secondary)] whitespace-nowrap">
-                        {new Date(act.createdAt).toLocaleString('ar-SA', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short'
-                        })}
-                      </td>
+            <div className="space-y-4">
+              <div className="overflow-x-auto whitespace-nowrap table-scroll-mobile">
+                <table className="w-full text-right text-xs sm:text-sm min-w-[750px] sm:min-w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                      <th className="pb-3 pr-2">المستخدم</th>
+                      <th className="pb-3 text-center">العملية / النشاط</th>
+                      <th className="pb-3 text-right">التفاصيل</th>
+                      <th className="pb-3 text-left">الوقت والتاريخ</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-color)]">
+                    {paginatedActivities.map((act) => (
+                      <tr key={act.id} className="hover:bg-[var(--border-color)]/20 transition-colors">
+                        <td className="py-4 pr-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs">
+                              {act.user?.name ? act.user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : '؟'}
+                            </div>
+                            <div className="text-right">
+                              <div className="font-semibold text-[var(--text-primary)]">{act.user?.name || 'مستخدم غير معروف'}</div>
+                              <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--border-color)]/40 px-1.5 py-0.5 rounded">
+                                {roleLabels[act.user?.role] || act.user?.role || '---'}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 text-center font-bold text-emerald-500">{act.action}</td>
+                        <td className="py-4 text-right text-[var(--text-secondary)] max-w-xs sm:max-w-md whitespace-normal break-words">{act.details}</td>
+                        <td className="py-4 text-left font-mono text-[var(--text-secondary)] whitespace-nowrap">
+                          {new Date(act.createdAt).toLocaleString('ar-SA', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short'
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalActivityPages > 1 && (
+                <div className="flex items-center justify-between border-t border-[var(--border-color)]/30 pt-4 mt-2" dir="rtl">
+                  <div className="text-xs text-[var(--text-secondary)] font-medium">
+                    عرض {Math.min(activities.length, (activityCurrentPage - 1) * activityPageSize + 1)} إلى {Math.min(activities.length, activityCurrentPage * activityPageSize)} من أصل {activities.length} نشاط
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActivityCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={activityCurrentPage === 1}
+                      className="p-1.5 px-3 bg-[var(--border-color)]/20 hover:bg-[var(--border-color)] disabled:opacity-40 text-xs font-bold rounded-xl transition-all cursor-pointer select-none text-[var(--text-primary)]"
+                    >
+                      السابق
+                    </button>
+                    <span className="text-xs font-bold text-[var(--text-primary)] px-2">
+                      الصفحة {activityCurrentPage} من {totalActivityPages}
+                    </span>
+                    <button
+                      onClick={() => setActivityCurrentPage(p => Math.min(totalActivityPages, p + 1))}
+                      disabled={activityCurrentPage === totalActivityPages}
+                      className="p-1.5 px-3 bg-[var(--border-color)]/20 hover:bg-[var(--border-color)] disabled:opacity-40 text-xs font-bold rounded-xl transition-all cursor-pointer select-none text-[var(--text-primary)]"
+                    >
+                      التالي
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

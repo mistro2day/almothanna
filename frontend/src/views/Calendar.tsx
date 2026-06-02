@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle, Clock, AlertTriangle, Phone, Receipt, User, FileText, Landmark } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle, Clock, AlertTriangle, Phone, Receipt, User, FileText, Landmark, Printer, Download, ExternalLink } from 'lucide-react';
 import { useSalesStore } from '../store/useSalesStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { apiClient } from '../api/apiClient';
 
 interface Installment {
@@ -19,6 +20,8 @@ interface Installment {
 
 export default function InstallmentsCalendar() {
   const setSelectedInvoiceIdForDetails = useSalesStore((state) => state.setSelectedInvoiceIdForDetails);
+  const settings = useSettingsStore((state) => state.settings);
+  const fetchSettings = useSettingsStore((state) => state.fetchSettings);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -28,6 +31,57 @@ export default function InstallmentsCalendar() {
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [payAmount, setPayAmount] = useState<number>(0);
   const [paying, setPaying] = useState(false);
+
+  // Sorting and Pagination for Upcoming Table
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortField, setSortField] = useState<string>('dueDate');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const upcomingInstallments = useMemo(() => {
+    const list = installments.filter(i => i.status !== 'PAID');
+    
+    list.sort((a, b) => {
+      let valA: any = a[sortField as keyof Installment];
+      let valB: any = b[sortField as keyof Installment];
+      
+      if (sortField === 'remaining') {
+        valA = a.amount - a.paidAmount;
+        valB = b.amount - b.paidAmount;
+      } else if (sortField === 'isOverdue') {
+        valA = new Date(a.dueDate) < new Date() ? 1 : 0;
+        valB = new Date(b.dueDate) < new Date() ? 1 : 0;
+      }
+      
+      if (typeof valA === 'string') {
+        return sortDirection === 'asc' 
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      } else {
+        return sortDirection === 'asc'
+          ? (valA > valB ? 1 : -1)
+          : (valB > valA ? 1 : -1);
+      }
+    });
+    
+    return list;
+  }, [installments, sortField, sortDirection]);
+
+  const paginatedInstallments = useMemo(() => {
+    const startIndex = (currentPage - 1) * 10;
+    return upcomingInstallments.slice(startIndex, startIndex + 10);
+  }, [upcomingInstallments, currentPage]);
+
+  const totalPages = Math.ceil(upcomingInstallments.length / 10);
 
   // Fetch installments
   const fetchInstallmentsData = async () => {
@@ -44,6 +98,7 @@ export default function InstallmentsCalendar() {
 
   useEffect(() => {
     fetchInstallmentsData();
+    fetchSettings();
   }, []);
 
   const handlePrevMonth = () => {
@@ -125,6 +180,359 @@ export default function InstallmentsCalendar() {
     }
   };
 
+  // Function to print specific installment
+  const handlePrintInstallment = (inst: Installment) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <title>سند قسط - ${inst.customerName}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+          .receipt-box { max-width: 600px; margin: auto; border: 2px solid #10b981; border-radius: 15px; padding: 30px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
+          .header { text-align: center; border-bottom: 2px dashed #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
+          .logo { font-size: 24px; font-weight: bold; color: #10b981; }
+          .title { font-size: 20px; font-weight: bold; color: #2d3748; margin-top: 10px; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px solid #f7fafc; padding-bottom: 8px; }
+          .label { color: #718096; font-weight: 600; }
+          .value { color: #2d3748; font-weight: bold; }
+          .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #a0aec0; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          @media print {
+            body { padding: 0; }
+            .receipt-box { box-shadow: none; border: 1px solid #000; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt-box">
+          <div class="header">
+            <div class="logo">${settings?.name || 'مجموعة الأنصار للمشروعات والخدمات الطبية'}</div>
+            <div style="font-size: 12px; color: #718096; margin-top: 5px;">
+              ${settings?.address ? `العنوان: ${settings.address}` : ''} 
+              ${settings?.phone ? ` | هاتف: ${settings.phone}` : ''}
+              ${settings?.email ? ` | بريد: ${settings.email}` : ''}
+            </div>
+            <div class="title">سند تفاصيل قسط مستحق</div>
+          </div>
+          <div class="row"><span class="label">اسم العميل:</span><span class="value">${inst.customerName}</span></div>
+          <div class="row"><span class="label">رقم الهاتف:</span><span class="value">${inst.customerPhone}</span></div>
+          <div class="row"><span class="label">رقم الفاتورة:</span><span class="value">${inst.saleId}</span></div>
+          <div class="row"><span class="label">تاريخ الاستحقاق:</span><span class="value">${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</span></div>
+          <div class="row"><span class="label">مبلغ القسط:</span><span class="value">${inst.amount.toLocaleString()} SDG</span></div>
+          <div class="row"><span class="label">المبلغ المدفوع:</span><span class="value">${inst.paidAmount.toLocaleString()} SDG</span></div>
+          <div class="row"><span class="label">المبلغ المتبقي:</span><span class="value" style="color: #d69e2e;">${(inst.amount - inst.paidAmount).toLocaleString()} SDG</span></div>
+          <div class="row"><span class="label">حالة القسط:</span><span class="value" style="color: #e53e3e;">${new Date(inst.dueDate) < new Date() ? 'متأخر' : 'مستحق'}</span></div>
+          <div class="footer">
+            <p>تاريخ الطباعة: ${new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}</p>
+            <p>برمجيات الأنصار لإدارة وتوزيع الأدوية</p>
+          </div>
+        </div>
+        <script>
+          window.onload = function() { window.print(); window.close(); }
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Function to download specific installment as PDF
+  const handlePDFInstallment = (inst: Installment) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <title>تفاصيل_قسط_${inst.customerName.replace(/\s+/g, '_')}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+          .receipt-box { max-width: 600px; margin: auto; border: 2px dashed #a0aec0; border-radius: 10px; padding: 30px; }
+          .header { text-align: center; border-bottom: 2px solid #4a5568; padding-bottom: 20px; margin-bottom: 20px; }
+          .logo { font-size: 26px; font-weight: bold; color: #2b6cb0; }
+          .title { font-size: 20px; font-weight: bold; color: #2d3748; margin-top: 10px; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px solid #edf2f7; padding-bottom: 8px; }
+          .label { color: #4a5568; font-weight: 600; }
+          .value { color: #2d3748; font-weight: bold; }
+          .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #a0aec0; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          @media print {
+            body { padding: 0; }
+            .receipt-box { border: 1px solid #000; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt-box">
+          <div class="header">
+            <div class="logo">${settings?.name || 'مجموعة الأنصار للمشروعات والخدمات الطبية'}</div>
+            <div style="font-size: 12px; color: #4a5568; margin-top: 5px;">
+              ${settings?.address ? `العنوان: ${settings.address}` : ''} 
+              ${settings?.phone ? ` | هاتف: ${settings.phone}` : ''}
+              ${settings?.email ? ` | بريد: ${settings.email}` : ''}
+            </div>
+            <div class="title">تقرير استحقاق قسط (ملف PDF)</div>
+          </div>
+          <div class="row"><span class="label">اسم العميل:</span><span class="value">${inst.customerName}</span></div>
+          <div class="row"><span class="label">رقم الهاتف:</span><span class="value">${inst.customerPhone}</span></div>
+          <div class="row"><span class="label">رقم الفاتورة:</span><span class="value">${inst.saleId}</span></div>
+          <div class="row"><span class="label">تاريخ الاستحقاق:</span><span class="value">${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</span></div>
+          <div class="row"><span class="label">مبلغ القسط:</span><span class="value">${inst.amount.toLocaleString()} SDG</span></div>
+          <div class="row"><span class="label">المبلغ المدفوع:</span><span class="value">${inst.paidAmount.toLocaleString()} SDG</span></div>
+          <div class="row"><span class="label">المبلغ المتبقي:</span><span class="value">${(inst.amount - inst.paidAmount).toLocaleString()} SDG</span></div>
+          <div class="row"><span class="label">حالة القسط:</span><span class="value">${new Date(inst.dueDate) < new Date() ? 'متأخر' : 'مستحق'}</span></div>
+          <div class="footer">
+            <p>تاريخ الإنشاء: ${new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}</p>
+          </div>
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Function to download formatted Excel for single installment
+  const handleExcelInstallment = (inst: Installment) => {
+    const remaining = inst.amount - inst.paidAmount;
+    const isOverdue = new Date(inst.dueDate) < new Date() ? 'متأخر' : 'مستحق';
+    const excelContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8">
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>تفاصيل القسط</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayRightToLeft/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          table { border-collapse: collapse; direction: rtl; }
+          th { background-color: #10b981; color: white; font-weight: bold; border: 1px solid #cbd5e1; text-align: center; height: 30px; font-family: 'Segoe UI', Arial, sans-serif; }
+          td { border: 1px solid #cbd5e1; text-align: right; padding: 8px; font-family: 'Segoe UI', Arial, sans-serif; }
+          .header-row { font-size: 16px; font-weight: bold; color: #1e293b; text-align: center; border: none; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <tr><td colspan="8" class="header-row" style="text-align: center; font-size: 16px; font-weight: bold;">${settings?.name || 'مجموعة الأنصار للمشروعات والخدمات الطبية'}</td></tr>
+          <tr><td colspan="8" class="header-row" style="text-align: center; font-size: 10px; color: #64748b; font-weight: normal;">
+            ${settings?.address ? `العنوان: ${settings.address}` : ''} 
+            ${settings?.phone ? ` | هاتف: ${settings.phone}` : ''}
+            ${settings?.email ? ` | بريد: ${settings.email}` : ''}
+          </td></tr>
+          <tr><td colspan="8" class="header-row" style="text-align: center; font-size: 13px; color: #4b5563;">تفاصيل الدفعة المستحقة للعميل ${inst.customerName}</td></tr>
+          <tr><td colspan="8"></td></tr>
+          <tr>
+            <th>العميل</th>
+            <th>الهاتف</th>
+            <th>رقم الفاتورة</th>
+            <th>تاريخ الاستحقاق</th>
+            <th>قيمة القسط</th>
+            <th>المدفوع</th>
+            <th>المتبقي</th>
+            <th>الحالة</th>
+          </tr>
+          <tr>
+            <td>${inst.customerName}</td>
+            <td style="mso-number-format:'\\@';">${inst.customerPhone}</td>
+            <td style="mso-number-format:'\\@';">${inst.saleId}</td>
+            <td>${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</td>
+            <td>${inst.amount}</td>
+            <td>${inst.paidAmount}</td>
+            <td>${remaining}</td>
+            <td>${isOverdue}</td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `قسط_${inst.customerName.replace(/\s+/g, '_')}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Function to export all upcoming installments to Excel
+  const handleExportAllExcel = () => {
+    const activeInsts = installments.filter(i => i.status !== 'PAID');
+    let rowsHtml = '';
+    activeInsts.forEach(inst => {
+      const remaining = inst.amount - inst.paidAmount;
+      const isOverdue = new Date(inst.dueDate) < new Date() ? 'متأخر' : 'مستحق';
+      rowsHtml += `
+        <tr>
+          <td>${inst.customerName}</td>
+          <td style="mso-number-format:'\\@';">${inst.customerPhone}</td>
+          <td style="mso-number-format:'\\@';">${inst.saleId}</td>
+          <td>${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</td>
+          <td>${inst.amount}</td>
+          <td>${inst.paidAmount}</td>
+          <td>${remaining}</td>
+          <td>${isOverdue}</td>
+        </tr>
+      `;
+    });
+
+    const excelContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8">
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>كشف الأقساط القادمة</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayRightToLeft/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          table { border-collapse: collapse; direction: rtl; }
+          th { background-color: #10b981; color: white; font-weight: bold; border: 1px solid #cbd5e1; text-align: center; height: 30px; font-family: 'Segoe UI', Arial, sans-serif; }
+          td { border: 1px solid #cbd5e1; text-align: right; padding: 8px; font-family: 'Segoe UI', Arial, sans-serif; }
+          .header-row { font-size: 18px; font-weight: bold; color: #1e293b; text-align: center; border: none; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <tr><td colspan="8" class="header-row" style="font-size: 18px; font-weight: bold;">${settings?.name || 'مجموعة الأنصار للمشروعات والخدمات الطبية'}</td></tr>
+          <tr><td colspan="8" class="header-row" style="font-size: 10px; color: #64748b; font-weight: normal;">
+            ${settings?.address ? `العنوان: ${settings.address}` : ''} 
+            ${settings?.phone ? ` | هاتف: ${settings.phone}` : ''}
+            ${settings?.email ? ` | بريد: ${settings.email}` : ''}
+          </td></tr>
+          <tr><td colspan="8" class="header-row" style="font-size: 14px; color: #4b5563; font-weight: bold;">كشف الأقساط والدفعات المستحقة والقادمة</td></tr>
+          <tr><td colspan="8">تاريخ التصدير: ${new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}</td></tr>
+          <tr><td colspan="8"></td></tr>
+          <tr>
+            <th>العميل</th>
+            <th>الهاتف</th>
+            <th>رقم الفاتورة</th>
+            <th>تاريخ الاستحقاق</th>
+            <th>قيمة القسط</th>
+            <th>المدفوع</th>
+            <th>المتبقي</th>
+            <th>الحالة</th>
+          </tr>
+          ${rowsHtml}
+        </table>
+      </body>
+      </html>
+    `;
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `كشف_الأقساط_القادمة_${new Date().toISOString().split('T')[0]}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Function to export all upcoming installments as PDF
+  const handleExportAllPDF = () => {
+    const activeInsts = installments.filter(i => i.status !== 'PAID');
+    let rowsHtml = '';
+    activeInsts.forEach((inst, index) => {
+      const remaining = inst.amount - inst.paidAmount;
+      const isOverdue = new Date(inst.dueDate) < new Date() ? 'متأخر' : 'مستحق';
+      rowsHtml += `
+        <tr style="background-color: ${index % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: right;">
+            <strong>${inst.customerName}</strong><br/>
+            <span style="font-size: 11px; color: #64748b;">${inst.customerPhone}</span>
+          </td>
+          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; font-family: monospace;">${inst.saleId}</td>
+          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center;">${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</td>
+          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; font-weight: bold;">${inst.amount.toLocaleString()} SDG</td>
+          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; color: #10b981;">${inst.paidAmount.toLocaleString()} SDG</td>
+          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; color: #f59e0b; font-weight: bold;">${remaining.toLocaleString()} SDG</td>
+          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center;">
+            <span style="padding: 4px 8px; border-radius: 9999px; font-size: 11px; font-weight: bold; 
+              background-color: ${isOverdue === 'متأخر' ? '#fee2e2' : '#fef3c7'}; 
+              color: ${isOverdue === 'متأخر' ? '#ef4444' : '#d97706'};">
+              ${isOverdue}
+            </span>
+          </td>
+        </tr>
+      `;
+    });
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <title>كشف_الأقساط_المستحقة_والقادمة</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; }
+          .header { text-align: center; border-bottom: 2px solid #10b981; padding-bottom: 15px; margin-bottom: 30px; }
+          .logo { font-size: 24px; font-weight: bold; color: #10b981; }
+          .title { font-size: 18px; font-weight: bold; color: #475569; margin-top: 5px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th { background-color: #10b981; color: white; font-weight: bold; border: 1px solid #e2e8f0; padding: 12px; text-align: center; }
+          .footer { text-align: center; margin-top: 40px; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          @media print {
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="logo">${settings?.name || 'مجموعة الأنصار للمشروعات والخدمات الطبية'}</div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 5px;">
+            ${settings?.address ? `العنوان: ${settings.address}` : ''} 
+            ${settings?.phone ? ` | هاتف: ${settings.phone}` : ''}
+            ${settings?.email ? ` | بريد: ${settings.email}` : ''}
+          </div>
+          <div class="title" style="margin-top: 10px;">كشف الأقساط والدفعات المستحقة والقادمة للعملاء</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 5px;">تاريخ استخراج التقرير: ${new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>العميل</th>
+              <th>رقم الفاتورة</th>
+              <th>تاريخ الاستحقاق</th>
+              <th>مبلغ القسط</th>
+              <th>المدفوع</th>
+              <th>المتبقي</th>
+              <th>الحالة</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+        <div class="footer">
+          <p>تم توليد هذا التقرير تلقائياً بواسطة نظام إدارة الأنصار الطبي</p>
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   // Determine status style
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -199,29 +607,36 @@ export default function InstallmentsCalendar() {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-[var(--text-secondary)] pb-2 border-b border-[var(--border-color)]">
-            <div>الأحد</div>
-            <div>الإثنين</div>
-            <div>الثلاثاء</div>
-            <div>الأربعاء</div>
-            <div>الخميس</div>
-            <div>الجمعة</div>
-            <div>السبت</div>
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs font-semibold text-[var(--text-secondary)] pb-2 border-b border-[var(--border-color)]">
+            <div><span className="hidden sm:inline">الأحد</span><span className="sm:hidden">أحد</span></div>
+            <div><span className="hidden sm:inline">الإثنين</span><span className="sm:hidden">إثن</span></div>
+            <div><span className="hidden sm:inline">الثلاثاء</span><span className="sm:hidden">ثلا</span></div>
+            <div><span className="hidden sm:inline">الأربعاء</span><span className="sm:hidden">أرب</span></div>
+            <div><span className="hidden sm:inline">الخميس</span><span className="sm:hidden">خميس</span></div>
+            <div><span className="hidden sm:inline">الجمعة</span><span className="sm:hidden">جمع</span></div>
+            <div><span className="hidden sm:inline">السبت</span><span className="sm:hidden">سبت</span></div>
           </div>
 
           <div className="grid grid-cols-7 gap-2">
             {days.map((day, idx) => {
-              if (!day) return <div key={`empty-${idx}`} className="h-24 bg-[var(--border-color)]/5 rounded-xl border border-[var(--border-color)]/10" />;
+              if (!day) return <div key={`empty-${idx}`} className="h-16 sm:h-[82px] bg-[var(--border-color)]/5 rounded-xl border border-[var(--border-color)]/10" />;
               
               const dayInsts = getDayInstallments(day);
               const isSelected = selectedDateStr === day.toISOString().split('T')[0];
               const isToday = new Date().toISOString().split('T')[0] === day.toISOString().split('T')[0];
+              
+              const tooltipText = dayInsts.length > 0
+                ? dayInsts.map(inst => 
+                    `👤 العميل: ${inst.customerName}\n💰 المبلغ: ${inst.amount.toLocaleString()} SDG\n📄 فاتورة: ${inst.saleId}`
+                  ).join('\n---\n')
+                : '';
 
               return (
                 <div
                   key={day.toString()}
                   onClick={() => handleDateClick(day)}
-                  className={`h-24 p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 ${
+                  title={tooltipText}
+                  className={`h-16 sm:h-[82px] p-1 sm:p-1.5 rounded-lg sm:rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 ${
                     isSelected
                       ? 'border-emerald-500 bg-emerald-500/5 ring-1 ring-emerald-500'
                       : isToday
@@ -229,19 +644,19 @@ export default function InstallmentsCalendar() {
                       : 'border-[var(--border-color)] hover:border-emerald-500/40 hover:bg-[var(--border-color)]/10'
                   }`}
                 >
-                  <span className={`text-xs font-bold self-start w-6 h-6 flex items-center justify-center rounded-lg ${
+                  <span className={`text-xs sm:text-[14px] font-black self-start w-4 h-4 sm:w-6 sm:h-6 flex items-center justify-center rounded ${
                     isToday ? 'bg-emerald-500 text-white' : 'text-[var(--text-primary)]'
                   }`}>
                     {day.getDate()}
                   </span>
                   
                   {dayInsts.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="text-[10px] text-right font-black truncate max-w-full text-emerald-500 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/10">
-                        {dayInsts.reduce((sum, i) => sum + i.amount, 0).toLocaleString()} SDG
+                    <div className="space-y-0.5">
+                      <div className="text-[8px] sm:text-xs text-right font-black truncate max-w-full text-emerald-500 bg-emerald-500/10 px-0.5 sm:px-1 py-0.5 rounded border border-emerald-500/10">
+                        {dayInsts.reduce((sum, i) => sum + i.amount, 0).toLocaleString()} <span className="hidden sm:inline">SDG</span>
                       </div>
-                      <div className="text-[8px] text-[var(--text-secondary)] text-right">
-                        {dayInsts.length} دفعة
+                      <div className="text-[7px] sm:text-[11px] text-[var(--text-secondary)] font-black text-right leading-none">
+                        {dayInsts.length} <span className="hidden sm:inline">دفعة</span><span className="sm:hidden">د</span>
                       </div>
                     </div>
                   )}
@@ -323,6 +738,174 @@ export default function InstallmentsCalendar() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Upcoming Installments Table Section */}
+      <div className="glass-card p-6 border border-[var(--border-color)] rounded-2xl space-y-4 mt-6 animate-fade-in">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[var(--border-color)] pb-4">
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2 text-[var(--text-primary)]">
+              <Landmark className="w-5 h-5 text-emerald-500" />
+              <span>جدول الدفعات القادمة والمستحقة</span>
+            </h3>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              فرز، تنقل وتصدير الأقساط القادمة للعملاء والمندوبين
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleExportAllPDF()}
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-md shadow-rose-500/10"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>تصدير الكل PDF 📄</span>
+            </button>
+            <button
+              onClick={() => handleExportAllExcel()}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-md shadow-emerald-500/10"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>تصدير الكل إكسل 📊</span>
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8 text-[var(--text-secondary)]">جاري تحميل جدول الأقساط...</div>
+        ) : upcomingInstallments.length === 0 ? (
+          <div className="text-center py-8 text-[var(--text-secondary)]">لا توجد أقساط مستحقة حالياً.</div>
+        ) : (
+          <div className="space-y-4">
+            <div className="overflow-x-auto whitespace-nowrap table-scroll-mobile">
+              <table className="w-full text-right text-xs sm:text-sm min-w-[950px] sm:min-w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                    <th onClick={() => handleSort('customerName')} className="pb-3 pr-2 cursor-pointer hover:text-[var(--text-primary)] select-none">
+                      العميل {sortField === 'customerName' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th onClick={() => handleSort('saleId')} className="pb-3 text-center cursor-pointer hover:text-[var(--text-primary)] select-none">
+                      رقم الفاتورة {sortField === 'saleId' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th onClick={() => handleSort('dueDate')} className="pb-3 text-center cursor-pointer hover:text-[var(--text-primary)] select-none">
+                      تاريخ الاستحقاق {sortField === 'dueDate' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th onClick={() => handleSort('amount')} className="pb-3 text-center cursor-pointer hover:text-[var(--text-primary)] select-none">
+                      قيمة القسط {sortField === 'amount' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th onClick={() => handleSort('paidAmount')} className="pb-3 text-center cursor-pointer hover:text-[var(--text-primary)] select-none">
+                      المدفوع {sortField === 'paidAmount' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th onClick={() => handleSort('remaining')} className="pb-3 text-center cursor-pointer hover:text-[var(--text-primary)] select-none">
+                      المتبقي {sortField === 'remaining' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th onClick={() => handleSort('isOverdue')} className="pb-3 text-center cursor-pointer hover:text-[var(--text-primary)] select-none">
+                      الحالة {sortField === 'isOverdue' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th className="pb-3 pl-2 text-left">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-color)]">
+                  {paginatedInstallments.map((inst) => {
+                    const remaining = inst.amount - inst.paidAmount;
+                    const isOverdue = new Date(inst.dueDate) < new Date();
+                    return (
+                      <tr key={inst.id} className="hover:bg-[var(--border-color)]/30 transition-colors">
+                        <td className="py-3 pr-2 font-medium text-[var(--text-primary)]">
+                          <div>{inst.customerName}</div>
+                          <div className="text-[10px] text-[var(--text-secondary)]">{inst.customerPhone}</div>
+                        </td>
+                        <td className="py-3 text-center">
+                          <button
+                            onClick={() => setSelectedInvoiceIdForDetails(inst.saleId)}
+                            className="text-indigo-500 hover:underline font-mono text-xs cursor-pointer inline-flex items-center gap-1"
+                          >
+                            {inst.saleId}
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </td>
+                        <td className="py-3 text-center font-mono text-[var(--text-secondary)]">
+                          {new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}
+                        </td>
+                        <td className="py-3 text-center font-semibold text-[var(--text-primary)]">
+                          {inst.amount.toLocaleString()} SDG
+                        </td>
+                        <td className="py-3 text-center text-emerald-500 font-semibold">
+                          {inst.paidAmount.toLocaleString()} SDG
+                        </td>
+                        <td className="py-3 text-center text-amber-500 font-semibold">
+                          {remaining.toLocaleString()} SDG
+                        </td>
+                        <td className="py-3 text-center">
+                          {isOverdue ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-500/10 text-rose-500 border border-rose-500/20">متأخر</span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20">مستحق</span>
+                          )}
+                        </td>
+                        <td className="py-3 pl-2 text-left">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handlePrintInstallment(inst)}
+                              className="p-1 px-2 text-[11px] bg-sky-500/10 hover:bg-sky-500 text-sky-500 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                              title="طباعة القسط"
+                            >
+                              <Printer className="w-3 h-3" />
+                              <span>طباعة</span>
+                            </button>
+                            <button
+                              onClick={() => handlePDFInstallment(inst)}
+                              className="p-1 px-2 text-[11px] bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                              title="تحميل PDF"
+                            >
+                              <FileText className="w-3 h-3" />
+                              <span>PDF</span>
+                            </button>
+                            <button
+                              onClick={() => handleExcelInstallment(inst)}
+                              className="p-1 px-2 text-[11px] bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                              title="تحميل إكسل منسق"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>إكسل</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-[var(--border-color)]/30 pt-4">
+                <div className="text-xs text-[var(--text-secondary)] font-medium">
+                  عرض {Math.min(upcomingInstallments.length, (currentPage - 1) * 10 + 1)} إلى {Math.min(upcomingInstallments.length, currentPage * 10)} من أصل {upcomingInstallments.length} دفعة
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1.5 px-3 bg-[var(--border-color)]/20 hover:bg-[var(--border-color)] disabled:opacity-40 text-xs font-bold rounded-xl transition-all cursor-pointer select-none text-[var(--text-primary)]"
+                  >
+                    السابق
+                  </button>
+                  <span className="text-xs font-bold text-[var(--text-primary)] px-2">
+                    الصفحة {currentPage} من {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-1.5 px-3 bg-[var(--border-color)]/20 hover:bg-[var(--border-color)] disabled:opacity-40 text-xs font-bold rounded-xl transition-all cursor-pointer select-none text-[var(--text-primary)]"
+                  >
+                    التالي
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Pay Installment Modal */}

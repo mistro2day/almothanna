@@ -64,7 +64,10 @@ export default function NotificationsCenter() {
     <div className="relative" dir="rtl">
       {/* Real-time Toast Pop-up */}
       {toast && (
-        <div className="fixed bottom-24 md:bottom-auto md:top-6 left-6 z-50 glass-card p-4 rounded-2xl border-2 border-emerald-500 shadow-2xl animate-shake max-w-sm flex items-start gap-3 bg-[var(--bg-primary)]/90 backdrop-blur-md">
+        <div 
+          className="fixed bottom-24 md:bottom-auto md:top-6 left-6 z-50 p-4 rounded-2xl border-2 border-emerald-500 shadow-2xl animate-shake max-w-sm flex items-start gap-3 backdrop-blur-md"
+          style={{ backgroundColor: 'var(--bg-secondary)' }}
+        >
           <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-xl">
             <Bell className="w-5 h-5 animate-bounce" />
           </div>
@@ -94,8 +97,11 @@ export default function NotificationsCenter() {
       {/* Dropdown Panel */}
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
-          <div className="fixed md:absolute top-20 md:top-auto left-4 right-4 md:left-0 md:right-auto mt-3 md:w-80 glass-card rounded-2xl border border-[var(--glass-border)] shadow-2xl z-40 overflow-hidden animate-zoom-in text-right max-h-[450px] flex flex-col bg-[var(--bg-primary)]/95 backdrop-blur-md">
+          <div className="fixed inset-0 z-[100]" onClick={() => setIsOpen(false)} />
+          <div 
+            className="fixed md:absolute top-16 md:top-full left-4 right-4 md:left-0 md:right-auto mt-2 md:w-96 rounded-2xl border border-[var(--border-color)] shadow-2xl z-[101] overflow-hidden animate-zoom-in text-right max-h-[500px] flex flex-col"
+            style={{ backgroundColor: 'var(--bg-secondary)', opacity: 1 }}
+          >
             <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between">
               <button
                 onClick={() => {

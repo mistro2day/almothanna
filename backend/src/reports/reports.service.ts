@@ -64,6 +64,7 @@ export class ReportsService {
       totalPaid: number;
       totalCommission: number;
       salesCount: number;
+      sales: any[];
     }> = {};
 
     let totalRepresentativeCommissions = 0;
@@ -118,6 +119,7 @@ export class ReportsService {
             totalPaid: 0,
             totalCommission: 0,
             salesCount: 0,
+            sales: [],
           };
         }
         representativesSalesMap[rep.id].totalSales += sale.total;
@@ -125,6 +127,17 @@ export class ReportsService {
         const commissionForThisSale = (sale.paid * rep.commissionRate) / 100;
         representativesSalesMap[rep.id].totalCommission += commissionForThisSale;
         representativesSalesMap[rep.id].salesCount += 1;
+        
+        representativesSalesMap[rep.id].sales.push({
+          id: sale.id,
+          createdAt: sale.createdAt.toISOString(),
+          customerName: sale.customer.name,
+          total: Math.round(sale.total),
+          paid: Math.round(sale.paid),
+          status: sale.status,
+          commission: Math.round(commissionForThisSale),
+        });
+
         totalRepresentativeCommissions += commissionForThisSale;
       }
     }
