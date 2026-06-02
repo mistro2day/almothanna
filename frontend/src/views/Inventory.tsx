@@ -3,6 +3,7 @@ import { useInventoryStore, Product, Batch } from '../store/useInventoryStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useActivityStore } from '../store/useActivityStore';
 import { useSupplierStore } from '../store/useSupplierStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { 
   Search, 
   Plus, 
@@ -12,7 +13,13 @@ import {
   Tag,
   AlertCircle,
   RefreshCw,
-  X
+  X,
+  FileSpreadsheet,
+  FileText,
+  ChevronRight,
+  ChevronLeft,
+  ChevronsRight,
+  ChevronsLeft
 } from 'lucide-react';
 import DatePicker from '../components/DatePicker';
 
@@ -56,14 +63,22 @@ export default function Inventory() {
   const { products, batches, pendingPurchaseOrders, fetchPendingPurchaseOrders, receivePurchaseOrder, addProduct, addBatch, addBatchQty } = useInventoryStore();
   const { user } = useAuthStore();
   const { suppliers, fetchSuppliers } = useSupplierStore();
+  const { settings, fetchSettings } = useSettingsStore();
 
   useEffect(() => {
     if (suppliers.length === 0) {
       fetchSuppliers();
     }
     fetchPendingPurchaseOrders();
-  }, [suppliers.length, fetchSuppliers, fetchPendingPurchaseOrders]);
+    fetchSettings();
+  }, [suppliers.length, fetchSuppliers, fetchPendingPurchaseOrders, fetchSettings]);
+  
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'products' | 'batches'>('products');
+  
+  // Pagination State
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   
   // Detail Modals State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -109,12 +124,32 @@ export default function Inventory() {
     manufactureDate: ''
   });
 
+  // Reset page when tab or itemsPerPage or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, itemsPerPage, search]);
+
   // Filtered products list
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 
     p.scientificName?.toLowerCase().includes(search.toLowerCase()) ||
     p.barcode?.includes(search)
   );
+
+  // FEFO: Sort batches by expiryDate ascending
+  const sortedBatches = [...batches].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+
+  // Filtered batches list
+  const filteredBatches = sortedBatches.filter(b => {
+    const prod = products.find(p => p.id === b.productId);
+    const prodName = prod?.name || '';
+    const sciName = prod?.scientificName || '';
+    return (
+      b.batchNumber.toLowerCase().includes(search.toLowerCase()) ||
+      prodName.toLowerCase().includes(search.toLowerCase()) ||
+      sciName.toLowerCase().includes(search.toLowerCase())
+    );
+  });
 
   // Filtered products list for Batch Selection autocomplete
   const filteredProductsForBatch = products.filter(p =>
@@ -209,270 +244,700 @@ export default function Inventory() {
     }
   };
 
+  // helper to check FEFO status helper
+  const getFefoStatus = (batch: Batch) => {
+    if (batch.qty <= 0) return { label: 'نفذت الكمية ⚪', colorClass: 'bg-gray-500/10 text-gray-500 border-gray-500/20' };
+    
+    const today = new Date(); today.setHours(0,0,0,0);
+    const expiry = new Date(batch.expiryDate);
+    const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
+
+    const isExpired = daysLeft <= 0;
+    const isNearExpiry = daysLeft > 0 && daysLeft <= 180;
+
+    // Find active batches for this product
+    const activeProductBatches = sortedBatches.filter(b => b.productId === batch.productId && b.qty > 0);
+    const isTopPriority = activeProductBatches.length > 0 && activeProductBatches[0].id === batch.id;
+
+    if (isExpired) {
+      return { label: 'منتهي الصلاحية ❌', colorClass: 'bg-rose-500/10 text-rose-500 border-rose-500/20 animate-pulse font-bold' };
+    }
+    if (isTopPriority) {
+      return { label: 'أولوية الصرف (FEFO) ⭐', colorClass: 'bg-amber-500/20 text-amber-500 border-amber-500/30 font-bold' };
+    }
+    if (isNearExpiry) {
+      return { label: 'قريب الانتهاء ⚠️', colorClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' };
+    }
+    return { label: 'صلاحية آمنة ✅', colorClass: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' };
+  };
+
+  // Excel Export with Styled Header (HTML Spreadsheet format which Excel opens perfectly)
+  const exportToExcel = () => {
+    let headers: string[] = [];
+    let rows: string[][] = [];
+    let reportTitle = '';
+    let filename = '';
+
+    if (activeTab === 'products') {
+      filename = 'قائمة_الأدوية_والمستلزمات.xls';
+      reportTitle = 'تقرير قائمة الأدوية والمستلزمات الطبية المتوفرة';
+      headers = ['الاسم التجاري', 'الاسم العلمي', 'الباركود', 'الفئة العلاجية', 'الوحدة', 'المورد', 'الكمية المتوفرة'];
+      rows = filteredProducts.map(p => {
+        const totalQty = batches.filter(b => b.productId === p.id).reduce((sum, b) => sum + b.qty, 0);
+        return [
+          p.name,
+          p.scientificName || '---',
+          p.barcode || '---',
+          p.category || 'عام',
+          p.unit,
+          p.supplier?.name || '---',
+          `${totalQty} قطعة`
+        ];
+      });
+    } else {
+      filename = 'التشغيلات_النشطة_Batches.xls';
+      reportTitle = 'تقرير التشغيلات النشطة وتواريخ الصلاحية بنظام (FEFO)';
+      headers = ['رقم التشغيلة', 'الدواء', 'الاسم العلمي', 'الكمية المتوفرة', 'سعر التكلفة (SDG)', 'تاريخ الإنتاج', 'تاريخ الانتهاء', 'أيام متبقية', 'الحالة'];
+      rows = filteredBatches.map(b => {
+        const prod = products.find(p => p.id === b.productId);
+        const today = new Date(); today.setHours(0,0,0,0);
+        const expiry = new Date(b.expiryDate);
+        const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
+        const status = getFefoStatus(b);
+        return [
+          b.batchNumber,
+          prod?.name || '---',
+          prod?.scientificName || '---',
+          b.qty.toString(),
+          `${b.costPrice} SDG`,
+          b.manufactureDate,
+          b.expiryDate,
+          daysLeft > 0 ? `${daysLeft} يوم` : 'منتهي الصلاحية',
+          status.label
+        ];
+      });
+    }
+
+    // Build stylized HTML content for MS Excel to parse beautifully
+    const htmlTemplate = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>المخزون الدوائي</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayRightToLeft/>
+                  <x:FitToPage/>
+                  <x:Print>
+                    <x:ValidPrinterInfo/>
+                  </x:Print>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; }
+          .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          .company-name { font-size: 22px; font-weight: bold; color: #0d9488; text-align: right; }
+          .company-details { font-size: 11px; color: #4b5563; text-align: right; }
+          .report-title { font-size: 16px; font-weight: bold; color: #374151; text-align: center; background-color: #f3f4f6; padding: 12px; border: 1px solid #e5e7eb; }
+          .meta-text { font-size: 11px; color: #6b7280; text-align: left; vertical-align: top; }
+          .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          .data-table th { background-color: #0d9488; color: #ffffff; font-weight: bold; border: 1px solid #0f766e; padding: 12px 10px; text-align: right; white-space: nowrap; }
+          .data-table td { border: 1px solid #e5e7eb; padding: 10px 8px; text-align: right; white-space: nowrap; }
+          .data-table tr:nth-child(even) { background-color: #f9fafb; }
+          .badge-safety { color: #10b981; font-weight: bold; }
+          .badge-priority { color: #f59e0b; font-weight: bold; }
+          .badge-expired { color: #ef4444; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <table class="header-table">
+          <tr>
+            <td class="company-name" colspan="3">${settings?.name || 'صيدلية المثنى الحديثة'}</td>
+            <td class="meta-text" colspan="${headers.length - 3}" rowspan="3" style="text-align: left; vertical-align: top;">
+              تاريخ التصدير: ${new Date().toLocaleString('ar-SA')}<br>
+              المسؤول: ${user?.name || '---'}
+            </td>
+          </tr>
+          <tr>
+            <td class="company-details" colspan="3">
+              🏢 العنوان: ${settings?.address || 'العنوان غير محدد'}<br>
+              📞 الهاتف: ${settings?.phone || '---'} | 📧 البريد: ${settings?.email || '---'}
+            </td>
+          </tr>
+          ${settings?.taxNumber ? `
+          <tr>
+            <td class="company-details" colspan="3">الرقم الضريبي: ${settings.taxNumber}</td>
+          </tr>` : ''}
+          <tr>
+            <td colspan="${headers.length}">&nbsp;</td>
+          </tr>
+          <tr>
+            <td class="report-title" colspan="${headers.length}">${reportTitle}</td>
+          </tr>
+          <tr>
+            <td colspan="${headers.length}">&nbsp;</td>
+          </tr>
+        </table>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              ${headers.map(h => `<th>${h}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                ${row.map(cell => {
+                  let styleClass = '';
+                  if (cell.includes('صلاحية آمنة')) styleClass = ' class="badge-safety"';
+                  else if (cell.includes('FEFO') || cell.includes('قريب الانتهاء')) styleClass = ' class="badge-priority"';
+                  else if (cell.includes('منتهي الصلاحية') || cell.includes('منتهي')) styleClass = ' class="badge-expired"';
+                  
+                  return `<td${styleClass}>${cell}</td>`;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        ${settings?.invoiceFooter ? `
+        <table style="width: 100%; margin-top: 30px;">
+          <tr>
+            <td colspan="${headers.length}" style="text-align: center; font-size: 11px; color: #9ca3af; font-style: italic; border-top: 1px dashed #d1d5db; padding-top: 15px;">
+              ${settings.invoiceFooter}
+            </td>
+          </tr>
+        </table>` : ''}
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([htmlTemplate], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // PDF Export
+  const exportToPDF = () => {
+    window.print();
+  };
+
   return (
     <div className="space-y-6 pb-20 lg:pb-0" dir="rtl">
-      <div className="space-y-6 animate-fade-in-slide">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-[var(--text-primary)]">المخزون الدوائي</h1>
-          <p className="text-[var(--text-secondary)] mt-1 text-sm sm:text-base">تتبع وإدارة المنتجات والتشغيلات (Batches) بنظام FEFO</p>
-        </div>
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 15mm;
+          }
+          body * {
+            visibility: hidden;
+            background-color: transparent !important;
+            color: #000000 !important;
+          }
+          #print-area, #print-area * {
+            visibility: visible;
+          }
+          #print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            direction: rtl;
+            background-color: transparent !important;
+          }
+          #print-area table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+          }
+          #print-area th {
+            background-color: #0d9488 !important;
+            color: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            font-weight: bold;
+            border: 1px solid #0f766e !important;
+            padding: 10px;
+          }
+          #print-area td {
+            border: 1px solid #e5e7eb !important;
+            padding: 8px;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          #print-area tr:nth-child(even) {
+            background-color: #f9fafb !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
 
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <button 
-            onClick={() => {
-              setShowBatchModal(true);
-              setBatchProductSearch('');
-              setNewBatch(prev => ({ ...prev, productId: '', batchNumber: generateBatchNumber() }));
-            }}
-            disabled={products.length === 0}
-            className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-teal-500/10 cursor-pointer touch-target w-full sm:w-auto"
-          >
-            <Layers className="w-4 h-4" />
-            <span>إضافة تشغيلة (Batch)</span>
-          </button>
-          <button 
-            onClick={() => setShowProductModal(true)}
-            className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer touch-target w-full sm:w-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>إضافة منتج جديد</span>
-          </button>
-        </div>
-      </div>
-
-      {/* FEFO Explanation Glassmorphic Banner */}
-      <div className="glass-card p-5 sm:p-6 rounded-3xl border border-teal-500/20 bg-gradient-to-r from-teal-500/5 via-emerald-500/5 to-transparent relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="absolute -right-16 -top-16 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl" />
-        <div className="absolute -left-16 -bottom-16 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl" />
-        
-        <div className="flex items-start gap-4 relative z-10">
-          <div className="p-3 bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-2xl shadow-lg shadow-teal-500/20">
-            <Layers className="w-6 h-6 animate-pulse" />
+      <div className="space-y-6 animate-fade-in-slide no-print">
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-[var(--text-primary)]">المخزون الدوائي</h1>
+            <p className="text-[var(--text-secondary)] mt-1 text-sm sm:text-base">تتبع وإدارة المنتجات والتشغيلات (Batches) بنظام FEFO</p>
           </div>
-          <div className="space-y-1">
-            <h2 className="text-base sm:text-lg font-bold text-[var(--text-primary)] flex flex-wrap items-center gap-2">
-              <span>نظام إدارة المخزون الذكي (FEFO)</span>
-              <span className="text-xs bg-teal-500/20 text-teal-600 dark:text-teal-400 font-bold px-2.5 py-0.5 rounded-full">
-                ما تنتهي صلاحيته أولاً، يُصرف أولاً
-              </span>
+
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            <button 
+              onClick={() => {
+                setShowBatchModal(true);
+                setBatchProductSearch('');
+                setNewBatch(prev => ({ ...prev, productId: '', batchNumber: generateBatchNumber() }));
+              }}
+              disabled={products.length === 0}
+              className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-teal-500/10 cursor-pointer touch-target w-full sm:w-auto font-bold"
+            >
+              <Layers className="w-4 h-4" />
+              <span>إضافة تشغيلة (Batch)</span>
+            </button>
+            <button 
+              onClick={() => setShowProductModal(true)}
+              className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer touch-target w-full sm:w-auto font-bold"
+            >
+              <Plus className="w-4 h-4" />
+              <span>إضافة منتج جديد</span>
+            </button>
+          </div>
+        </div>
+
+        {/* FEFO Explanation Glassmorphic Banner */}
+        <div className="glass-card p-5 sm:p-6 rounded-3xl border border-teal-500/20 bg-gradient-to-r from-teal-500/5 via-emerald-500/5 to-transparent relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="absolute -right-16 -top-16 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl" />
+          <div className="absolute -left-16 -bottom-16 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl" />
+          
+          <div className="flex items-start gap-4 relative z-10">
+            <div className="p-3 bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-2xl shadow-lg shadow-teal-500/20">
+              <Layers className="w-6 h-6 animate-pulse" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-base sm:text-lg font-bold text-[var(--text-primary)] flex flex-wrap items-center gap-2">
+                <span>نظام إدارة المخزون الذكي (FEFO)</span>
+                <span className="text-xs bg-teal-500/20 text-teal-600 dark:text-teal-400 font-bold px-2.5 py-0.5 rounded-full">
+                  ما تنتهي صلاحيته أولاً، يُصرف أولاً
+                </span>
+              </h2>
+              <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed max-w-2xl">
+                يقوم النظام تلقائياً بتحليل صلاحيات التشغيلات النشطة وترتيبها. يتم منح الأولوية القصوى للصرف للتشغيلات ذات الصلاحية الأقرب للانتهاء لتجنب تلف الأدوية، مع ترميز لوني ذكي لتنبيه الصيادلة ومسؤولي المستودع.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 bg-[var(--border-color)]/30 backdrop-blur-md px-4 py-2 rounded-2xl border border-[var(--glass-border)] text-xs text-[var(--text-secondary)] self-end md:self-auto shrink-0 relative z-10 font-bold">
+            <Calendar className="w-4 h-4 text-teal-500" />
+            <span>تاريخ اليوم: <strong>{new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
+          </div>
+        </div>
+
+        {/* Pending Purchase Orders Section */}
+        {pendingPurchaseOrders.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold font-display text-amber-500 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              <span>أوامر شراء قيد الاستلام ({pendingPurchaseOrders.length})</span>
             </h2>
-            <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed max-w-2xl">
-              يقوم النظام تلقائياً بتحليل صلاحيات التشغيلات النشطة وترتيبها. يتم منح الأولوية القصوى للصرف للتشغيلات ذات الصلاحية الأقرب للانتهاء لتجنب تلف الأدوية، مع ترميز لوني ذكي لتنبيه الصيادلة ومسؤولي المستودع.
-            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pendingPurchaseOrders.map((po) => (
+                <div 
+                  key={po.id} 
+                  onClick={() => {
+                    setSelectedPO(po);
+                    setReceiveItemsForm(po.items.map(item => ({
+                      purchaseItemId: item.id,
+                      productId: item.productId,
+                      productName: item.product?.name,
+                      qty: item.qty, // default to requested qty
+                      unitCost: item.unitCost,
+                      batchNumber: generateBatchNumber(), // auto-generate a suggestion
+                      expiryDate: '',
+                      manufactureDate: ''
+                    })));
+                    setShowReceiveModal(true);
+                  }}
+                  className="glass-card p-4 rounded-2xl space-y-3 border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer bg-gradient-to-br from-amber-500/5 to-transparent relative overflow-hidden animate-pulse"
+                >
+                  <div className="absolute top-0 right-0 w-1.5 h-full bg-amber-500" />
+                  <div className="flex justify-between items-start">
+                    <span className="font-bold text-[var(--text-primary)]">{po.supplier?.name}</span>
+                    <span className="text-xs bg-amber-500/20 text-amber-600 px-2 py-0.5 rounded-full font-mono">{po.orderNumber}</span>
+                  </div>
+                  <div className="text-xs text-[var(--text-secondary)]">
+                    يحتوي على {po.items.length} أصناف جاهزة للاستلام والإضافة للمخزون.
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2 bg-[var(--border-color)]/30 backdrop-blur-md px-4 py-2 rounded-2xl border border-[var(--glass-border)] text-xs text-[var(--text-secondary)] self-end md:self-auto shrink-0 relative z-10">
-          <Calendar className="w-4 h-4 text-teal-500" />
-          <span>تاريخ اليوم: <strong>{new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
+        )}
+
+        {/* Tabs, Search & Action Bar */}
+        <div className="glass-card p-4 rounded-2xl flex flex-col md:flex-row gap-4 items-center justify-between">
+          {/* Custom Switcher Tabs */}
+          <div className="flex bg-[var(--bg-secondary)] p-1 rounded-xl border border-[var(--border-color)] w-full md:w-auto">
+            <button
+              onClick={() => setActiveTab('products')}
+              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer ${
+                activeTab === 'products'
+                  ? 'bg-teal-600 text-white shadow-md'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Tag className="w-4 h-4" />
+              <span>الأدوية والمستلزمات</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('batches')}
+              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer ${
+                activeTab === 'batches'
+                  ? 'bg-teal-600 text-white shadow-md'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              <span>التشغيلات النشطة (Batches)</span>
+            </button>
+          </div>
+
+          {/* Search Box */}
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] w-full md:flex-1 md:max-w-md">
+            <Search className="w-4 h-4 text-[var(--text-secondary)]" />
+            <input 
+              type="text" 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={activeTab === 'products' ? "ابحث عن دواء بالاسم، الاسم العلمي، الباركود..." : "ابحث برقم التشغيلة، الدواء..."}
+              className="bg-transparent text-sm w-full outline-none text-[var(--text-primary)] placeholder-[var(--text-secondary)]"
+            />
+          </div>
+
+          {/* Export Actions & Items Count */}
+          <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+              <span>عرض:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-2 py-1 outline-none text-[var(--text-primary)] font-bold cursor-pointer"
+              >
+                <option value={10}>10 نتائج</option>
+                <option value={25}>25 نتيجة</option>
+                <option value={50}>50 نتيجة</option>
+                <option value={100}>100 نتيجة</option>
+              </select>
+            </div>
+            
+            <div className="flex gap-2">
+              <button
+                onClick={exportToExcel}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="تصدير لملف Excel"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span className="hidden sm:inline">اكسل</span>
+              </button>
+
+              <button
+                onClick={exportToPDF}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 text-rose-500 border border-rose-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="تصدير لملف PDF"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="hidden sm:inline">بي دي اف</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Pending Purchase Orders Section */}
-      {pendingPurchaseOrders.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-bold font-display text-amber-500 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            <span>أوامر شراء قيد الاستلام ({pendingPurchaseOrders.length})</span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pendingPurchaseOrders.map((po) => (
-              <div 
-                key={po.id} 
-                onClick={() => {
-                  setSelectedPO(po);
-                  setReceiveItemsForm(po.items.map(item => ({
-                    purchaseItemId: item.id,
-                    productId: item.productId,
-                    productName: item.product?.name,
-                    qty: item.qty, // default to requested qty
-                    unitCost: item.unitCost,
-                    batchNumber: generateBatchNumber(), // auto-generate a suggestion
-                    expiryDate: '',
-                    manufactureDate: ''
-                  })));
-                  setShowReceiveModal(true);
-                }}
-                className="glass-card p-4 rounded-2xl space-y-3 border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer bg-gradient-to-br from-amber-500/5 to-transparent relative overflow-hidden"
-              >
-                <div className="absolute top-0 right-0 w-1.5 h-full bg-amber-500" />
-                <div className="flex justify-between items-start">
-                  <span className="font-bold text-[var(--text-primary)]">{po.supplier?.name}</span>
-                  <span className="text-xs bg-amber-500/20 text-amber-600 px-2 py-0.5 rounded-full font-mono">{po.orderNumber}</span>
-                </div>
-                <div className="text-xs text-[var(--text-secondary)]">
-                  يحتوي على {po.items.length} أصناف جاهزة للاستلام والإضافة للمخزون.
+      {/* Main Print and Layout Content */}
+      <div id="print-area">
+        {/* Printable Header - Matching Invoices Template */}
+        <div className="hidden print:block mb-8 border-b pb-6">
+          <div className="flex justify-between items-start gap-4">
+            <div className="text-right space-y-1">
+              <h1 className="text-2xl font-bold text-teal-600 dark:text-teal-400">{settings?.name || 'صيدلية المثنى الحديثة'}</h1>
+              <p className="text-xs text-gray-500">{settings?.address || 'العنوان غير محدد'}</p>
+              <p className="text-xs text-gray-500">هاتف: {settings?.phone || '---'} {settings?.email ? `| بريد: ${settings.email}` : ''}</p>
+              {settings?.taxNumber && <p className="text-xs text-gray-500">الرقم الضريبي: {settings.taxNumber}</p>}
+            </div>
+            
+            {settings?.logo ? (
+              <div className="w-24 h-24 rounded-2xl overflow-hidden border border-gray-200 p-1 bg-white">
+                <img src={settings.logo} alt="Company Logo" className="w-full h-full object-contain" />
+              </div>
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-teal-500/10 flex items-center justify-center text-teal-500 font-bold text-xl">
+                POS
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-dashed border-gray-200 text-center">
+            <h2 className="text-lg font-bold text-gray-800">
+              {activeTab === 'products' ? 'تقرير الأدوية والمستلزمات الطبية المتوفرة' : 'تقرير تفاصيل التشغيلات النشطة وصلاحيات الأدوية'}
+            </h2>
+            <p className="text-[11px] text-gray-500 mt-1">تاريخ ووقت طباعة التقرير: {new Date().toLocaleString('ar-SA')}</p>
+          </div>
+        </div>
+
+        {/* Tab Content 1: Products Table */}
+        {activeTab === 'products' && (
+          <div className="space-y-4">
+            <div className="glass-card overflow-hidden border border-[var(--glass-border)] rounded-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-sm">
+                  <thead>
+                    <tr className="bg-[var(--bg-secondary)] border-b border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
+                      <th className="p-4">المنتج (الاسم التجاري)</th>
+                      <th className="p-4">الاسم العلمي</th>
+                      <th className="p-4">الفئة</th>
+                      <th className="p-4">الباركود</th>
+                      <th className="p-4 text-center">الوحدة</th>
+                      <th className="p-4 text-center">الكمية المتوفرة</th>
+                      <th className="p-4 no-print">المورد</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-color)]">
+                    {filteredProducts.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-12 text-center text-[var(--text-secondary)]">
+                          لم يتم العثور على أي منتجات مطابقة.
+                        </td>
+                      </tr>
+                    ) : (
+                      (() => {
+                        const startIndex = (currentPage - 1) * itemsPerPage;
+                        const paginatedProducts = filteredProducts.slice(startIndex, startIndex + itemsPerPage);
+
+                        return paginatedProducts.map((p) => {
+                          const totalQty = batches.filter(b => b.productId === p.id).reduce((sum, b) => sum + b.qty, 0);
+                          return (
+                            <tr 
+                              key={p.id} 
+                              onClick={() => setSelectedProduct(p)}
+                              className="text-[var(--text-primary)] hover:bg-[var(--border-color)]/20 transition-all cursor-pointer"
+                            >
+                              <td className="p-4 font-bold text-teal-600 dark:text-teal-400">{p.name}</td>
+                              <td className="p-4 text-[var(--text-secondary)] italic">{p.scientificName || '---'}</td>
+                              <td className="p-4">
+                                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500">
+                                  {p.category || 'عام'}
+                                </span>
+                              </td>
+                              <td className="p-4 font-mono text-[var(--text-secondary)]">{p.barcode || '---'}</td>
+                              <td className="p-4 text-center">{p.unit}</td>
+                              <td className="p-4 text-center">
+                                <span className={`font-bold font-mono px-3 py-1 rounded-full text-xs ${totalQty > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                                  {totalQty} قطعة
+                                </span>
+                              </td>
+                              <td className="p-4 text-xs font-semibold text-[var(--text-secondary)] no-print">
+                                {p.supplier?.name ? `🏢 ${p.supplier.name}` : '---'}
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Pagination Controls */}
+            {filteredProducts.length > itemsPerPage && (
+              <div className="flex items-center justify-between px-4 py-3 bg-[var(--border-color)]/20 border border-[var(--border-color)] rounded-xl no-print">
+                <span className="text-xs text-[var(--text-secondary)]">
+                  إظهار <strong>{Math.min(filteredProducts.length, (currentPage - 1) * itemsPerPage + 1)}</strong> إلى <strong>{Math.min(filteredProducts.length, currentPage * itemsPerPage)}</strong> من أصل <strong>{filteredProducts.length}</strong> دواء ومستلزم
+                </span>
+
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <ChevronsRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  
+                  <span className="flex items-center justify-center px-4 py-1 text-sm font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 rounded-lg">
+                    {currentPage}
+                  </span>
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredProducts.length / itemsPerPage), prev + 1))}
+                    disabled={currentPage >= Math.ceil(filteredProducts.length / itemsPerPage)}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(Math.ceil(filteredProducts.length / itemsPerPage))}
+                    disabled={currentPage >= Math.ceil(filteredProducts.length / itemsPerPage)}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <ChevronsLeft className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Search Bar */}
-      <div className="glass-card flex items-center gap-3 px-4 py-3 rounded-2xl">
-        <Search className="w-5 h-5 text-[var(--text-secondary)]" />
-        <input 
-          type="text" 
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="ابحث بالاسم، الاسم العلمي، أو الباركود..."
-          className="bg-transparent text-sm w-full outline-none text-[var(--text-primary)] placeholder-[var(--text-secondary)]"
-        />
-      </div>
+        {/* Tab Content 2: Batches Table */}
+        {activeTab === 'batches' && (
+          <div className="space-y-4">
+            <div className="glass-card overflow-hidden border border-[var(--glass-border)] rounded-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-sm">
+                  <thead>
+                    <tr className="bg-[var(--bg-secondary)] border-b border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
+                      <th className="p-4">رقم التشغيلة</th>
+                      <th className="p-4">الدواء (الاسم التجاري)</th>
+                      <th className="p-4">الكمية</th>
+                      <th className="p-4">سعر التكلفة</th>
+                      <th className="p-4 text-center">حالة الصلاحية</th>
+                      <th className="p-4 text-center">أيام متبقية</th>
+                      <th className="p-4 text-left">تاريخ الانتهاء</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-color)]">
+                    {filteredBatches.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-12 text-center text-[var(--text-secondary)]">
+                          لم يتم العثور على أي تشغيلات نشطة مطابقة.
+                        </td>
+                      </tr>
+                    ) : (
+                      (() => {
+                        const startIndex = (currentPage - 1) * itemsPerPage;
+                        const paginatedBatches = filteredBatches.slice(startIndex, startIndex + itemsPerPage);
 
-      {/* Main Inventory Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Products List (Left 2 Columns) */}
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-lg font-bold font-display text-[var(--text-primary)]">قائمة الأدوية والمستلزمات</h2>
-          {filteredProducts.length === 0 ? (
-            <div className="glass-card text-center py-12 rounded-2xl text-[var(--text-secondary)] text-sm">
-              لم يتم العثور على أي منتجات مطابقة.
+                        return paginatedBatches.map((b) => {
+                          const prod = products.find(p => p.id === b.productId);
+                          const status = getFefoStatus(b);
+                          
+                          const today = new Date(); today.setHours(0,0,0,0);
+                          const expiry = new Date(b.expiryDate);
+                          const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
+
+                          return (
+                            <tr 
+                              key={b.id} 
+                              onClick={() => setSelectedBatch(b)}
+                              className="text-[var(--text-primary)] hover:bg-[var(--border-color)]/20 transition-all cursor-pointer"
+                            >
+                              <td className="p-4 font-mono font-bold text-teal-600 dark:text-teal-400">{b.batchNumber}</td>
+                              <td className="p-4">
+                                <div className="font-bold">{prod?.name || 'منتج غير معروف'}</div>
+                                {prod?.scientificName && <div className="text-xs text-[var(--text-secondary)] italic mt-0.5">{prod.scientificName}</div>}
+                              </td>
+                              <td className="p-4 font-bold font-mono">{b.qty}</td>
+                              <td className="p-4 font-mono text-[var(--text-secondary)]">{b.costPrice} SDG</td>
+                              <td className="p-4 text-center">
+                                <span className={`text-xs px-2.5 py-1 rounded-full border ${status.colorClass}`}>
+                                  {status.label}
+                                </span>
+                              </td>
+                              <td className="p-4 text-center font-bold font-mono">
+                                {daysLeft > 0 ? (
+                                  <span className={daysLeft <= 180 ? 'text-amber-500' : 'text-emerald-500'}>{daysLeft} يوم</span>
+                                ) : (
+                                  <span className="text-rose-500">منتهي</span>
+                                )}
+                              </td>
+                              <td className="p-4 text-left font-mono text-[var(--text-secondary)]">
+                                {new Date(b.expiryDate).toLocaleDateString('en-US')}
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredProducts.map((p) => {
-                const productBatches = batches.filter(b => b.productId === p.id);
-                const totalQty = productBatches.reduce((sum, b) => sum + b.qty, 0);
 
-                return (
-                  <div 
-                    key={p.id} 
-                    onClick={() => setSelectedProduct(p)}
-                    className="glass-card p-5 rounded-2xl space-y-4 border border-[var(--glass-border)] flex flex-col justify-between hover:border-teal-500/25 transition-all cursor-pointer"
+            {/* Pagination Controls */}
+            {filteredBatches.length > itemsPerPage && (
+              <div className="flex items-center justify-between px-4 py-3 bg-[var(--border-color)]/20 border border-[var(--border-color)] rounded-xl no-print">
+                <span className="text-xs text-[var(--text-secondary)]">
+                  إظهار <strong>{Math.min(filteredBatches.length, (currentPage - 1) * itemsPerPage + 1)}</strong> إلى <strong>{Math.min(filteredBatches.length, currentPage * itemsPerPage)}</strong> من أصل <strong>{filteredBatches.length}</strong> تشغيلة
+                </span>
+
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
                   >
-                    <div>
-                      <div className="flex justify-between items-start gap-2">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500">
-                          {p.category || 'عام'}
-                        </span>
-                        <span className="text-xs text-[var(--text-secondary)] font-mono">{p.barcode}</span>
-                      </div>
-                      <h3 className="text-base font-bold text-[var(--text-primary)] mt-2">{p.name}</h3>
-                      {p.supplier?.name && (
-                        <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold mt-1">🏢 {p.supplier.name}</p>
-                      )}
-                      {p.scientificName && (
-                        <p className="text-xs text-[var(--text-secondary)] italic mt-1">{p.scientificName}</p>
-                      )}
-                    </div>
-
-                    <div className="pt-3 border-t border-[var(--border-color)] flex justify-between items-center text-xs">
-                      <span className="text-[var(--text-secondary)]">الوحدة: <strong className="text-[var(--text-primary)]">{p.unit}</strong></span>
-                      <span className={`font-semibold ${totalQty > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {totalQty > 0 ? `${totalQty} قطعة متوفرة` : 'نفذ من المخزن'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Batches Tracker (Right 1 Column) */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-bold font-display text-[var(--text-primary)]">التشغيلات النشطة (Batches)</h2>
-          {batches.length === 0 ? (
-            <div className="glass-card text-center py-12 rounded-2xl text-[var(--text-secondary)] text-sm">
-              لا توجد أي تشغيلات مدخلة حتى الآن.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {(() => {
-                // FEFO: Sort batches by expiryDate ascending
-                const sortedBatches = [...batches].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
-
-                // Helper to check FEFO Priority for each product
-                const getFefoStatus = (batch: Batch) => {
-                  if (batch.qty <= 0) return { label: 'نفذت الكمية ⚪', colorClass: 'bg-gray-500/10 text-gray-500 border-gray-500/20' };
+                    <ChevronsRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                   
-                  const today = new Date(); today.setHours(0,0,0,0);
-                  const expiry = new Date(batch.expiryDate);
-                  const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
+                  <span className="flex items-center justify-center px-4 py-1 text-sm font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 rounded-lg">
+                    {currentPage}
+                  </span>
 
-                  const isExpired = daysLeft <= 0;
-                  const isNearExpiry = daysLeft > 0 && daysLeft <= 180;
-
-                  // Find active batches for this product
-                  const activeProductBatches = sortedBatches.filter(b => b.productId === batch.productId && b.qty > 0);
-                  const isTopPriority = activeProductBatches.length > 0 && activeProductBatches[0].id === batch.id;
-
-                  if (isExpired) {
-                    return { label: 'منتهي الصلاحية ❌', colorClass: 'bg-rose-500/10 text-rose-500 border-rose-500/20 animate-pulse font-bold' };
-                  }
-                  if (isTopPriority) {
-                    return { label: 'أولوية الصرف (FEFO) ⭐', colorClass: 'bg-amber-500/20 text-amber-500 border-amber-500/30 font-bold shadow-sm shadow-amber-500/10' };
-                  }
-                  if (isNearExpiry) {
-                    return { label: 'قريب الانتهاء ⚠️', colorClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' };
-                  }
-                  return { label: 'صلاحية آمنة ✅', colorClass: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' };
-                };
-
-                return sortedBatches.map((b) => {
-                  const prod = products.find(p => p.id === b.productId);
-                  const status = getFefoStatus(b);
-                  
-                  const today = new Date(); today.setHours(0,0,0,0);
-                  const expiry = new Date(b.expiryDate);
-                  const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
-                  const isNearOrExpired = daysLeft <= 180;
-
-                  return (
-                    <div 
-                      key={b.id} 
-                      onClick={() => setSelectedBatch(b)}
-                      className="glass-card p-4 rounded-xl space-y-2 border border-[var(--glass-border)] relative overflow-hidden hover:border-teal-500/25 transition-all cursor-pointer"
-                    >
-                      {isNearOrExpired && (
-                        <div className={`absolute top-0 left-0 w-1.5 h-full ${daysLeft <= 0 ? 'bg-rose-500' : 'bg-amber-500'}`} />
-                      )}
-                      
-                      <div className="flex justify-between items-start gap-2">
-                        <span className="text-sm font-bold text-[var(--text-primary)]">{prod?.name || 'منتج غير معروف'}</span>
-                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-[var(--border-color)] text-[var(--text-secondary)] shrink-0">
-                          {b.batchNumber}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${status.colorClass}`}>
-                          {status.label}
-                        </span>
-                        {daysLeft > 0 ? (
-                          <span className="text-[10px] text-[var(--text-secondary)]">
-                            متبقي: <strong className="text-[var(--text-primary)]">{daysLeft} يوم</strong>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-rose-500 font-bold">
-                            تالف / منتهي
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-secondary)] pt-2 border-t border-[var(--border-color)]">
-                        <div>الكمية: <strong className="text-[var(--text-primary)]">{b.qty}</strong></div>
-                        <div>سعر التكلفة: <strong className="text-[var(--text-primary)]">{b.costPrice} SDG</strong></div>
-                        <div className="col-span-2 flex items-center gap-1 mt-1">
-                          <Calendar className="w-3.5 h-3.5 text-teal-500" />
-                          <span>الانتهاء: <strong>{new Date(b.expiryDate).toLocaleDateString('en-US')}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          )}
-        </div>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredBatches.length / itemsPerPage), prev + 1))}
+                    disabled={currentPage >= Math.ceil(filteredBatches.length / itemsPerPage)}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(Math.ceil(filteredBatches.length / itemsPerPage))}
+                    disabled={currentPage >= Math.ceil(filteredBatches.length / itemsPerPage)}
+                    className="p-2 bg-[var(--bg-secondary)] hover:bg-[var(--border-color)] disabled:opacity-40 text-[var(--text-primary)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <ChevronsLeft className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-    </div>
 
-    {/* Modal 1: Add Product */}
+      {/* Modal 1: Add Product */}
       {showProductModal && (
         <div className="modal-overlay">
           <div className="modal-content-card modal-product max-w-md" dir="rtl">
@@ -946,100 +1411,106 @@ export default function Inventory() {
           </div>
         </div>
       )}
-    {/* Modal 3: Receive PO */}
-    {showReceiveModal && selectedPO && (
-      <div className="modal-overlay">
-        <div className="modal-content-card max-w-3xl" dir="rtl">
-          <div className="modal-glow-back" />
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-              <Layers className="w-5 h-5 text-teal-500" />
-              <span>استلام مخزون - أمر الشراء {selectedPO.orderNumber}</span>
-            </h3>
-            <button onClick={() => setShowReceiveModal(false)} className="text-[var(--text-secondary)] hover:text-rose-500">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          
-          <form onSubmit={handleReceivePO} className="space-y-4">
-            <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl p-4 max-h-[60vh] overflow-y-auto space-y-6">
-              {receiveItemsForm.map((item, index) => (
-                <div key={item.purchaseItemId} className="p-4 bg-[var(--bg-primary)] border border-[var(--glass-border)] rounded-lg space-y-3 shadow-sm">
-                  <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-2 mb-2">
-                    <span className="font-bold text-teal-600 dark:text-teal-400">{item.productName}</span>
-                    <span className="text-xs text-[var(--text-secondary)]">الكمية المطلوبة: {selectedPO.items.find((i: any) => i.id === item.purchaseItemId)?.qty}</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="block text-xs text-[var(--text-secondary)]">الكمية المستلمة الفعليا (Qty)</label>
-                      <input 
-                        type="number" required min="1"
-                        value={item.qty}
-                        onChange={(e) => {
-                          const newForm = [...receiveItemsForm];
-                          newForm[index].qty = Number(e.target.value);
-                          setReceiveItemsForm(newForm);
-                        }}
-                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs text-[var(--text-secondary)]">رقم التشغيلة (Batch No)</label>
-                      <input 
-                        type="text" required
-                        value={item.batchNumber}
-                        onChange={(e) => {
-                          const newForm = [...receiveItemsForm];
-                          newForm[index].batchNumber = e.target.value;
-                          setReceiveItemsForm(newForm);
-                        }}
-                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-sm font-mono"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs text-[var(--text-secondary)]">تاريخ الإنتاج (اختياري)</label>
-                      <DatePicker 
-                        value={item.manufactureDate}
-                        onChange={(val) => {
-                          const newForm = [...receiveItemsForm];
-                          newForm[index].manufactureDate = val;
-                          setReceiveItemsForm(newForm);
-                        }}
-                        placeholder="اختر تاريخ الإنتاج"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs text-[var(--text-secondary)]">تاريخ الانتهاء (إلزامي)</label>
-                      <DatePicker 
-                        value={item.expiryDate}
-                        onChange={(val) => {
-                          const newForm = [...receiveItemsForm];
-                          newForm[index].expiryDate = val;
-                          setReceiveItemsForm(newForm);
-                        }}
-                        placeholder="اختر تاريخ الانتهاء"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
 
-            <div className="flex justify-end gap-3 pt-2">
-              <button 
-                type="submit"
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium cursor-pointer"
-              >
-                تأكيد واعتماد دخول المخزون
+      {/* Modal 5: Receive PO */}
+      {showReceiveModal && selectedPO && (
+        <div className="modal-overlay">
+          <div className="modal-content-card max-w-3xl" dir="rtl">
+            <div className="modal-glow-back" />
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+                <Layers className="w-5 h-5 text-teal-500" />
+                <span>استلام مخزون - أمر الشراء {selectedPO.orderNumber}</span>
+              </h3>
+              <button onClick={() => setShowReceiveModal(false)} className="text-[var(--text-secondary)] hover:text-rose-500">
+                <X className="w-5 h-5" />
               </button>
             </div>
-          </form>
-        </div>
-      </div>
-    )}
+            
+            <form onSubmit={handleReceivePO} className="space-y-4">
+              <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl p-4 max-h-[60vh] overflow-y-auto space-y-6">
+                {receiveItemsForm.map((item, index) => (
+                  <div key={item.purchaseItemId} className="p-4 bg-[var(--bg-primary)] border border-[var(--glass-border)] rounded-lg space-y-3 shadow-sm">
+                    <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-2 mb-2">
+                      <span className="font-bold text-teal-600 dark:text-teal-400">{item.productName}</span>
+                      <span className="text-xs text-[var(--text-secondary)]">الكمية المطلوبة: {selectedPO.items.find((i: any) => i.id === item.purchaseItemId)?.qty}</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-xs text-[var(--text-secondary)]">الكمية المستلمة الفعليا (Qty)</label>
+                        <input 
+                          type="number" required min="1"
+                          value={item.qty}
+                          onChange={(e) => {
+                            const newForm = [...receiveItemsForm];
+                            newForm[index].qty = Number(e.target.value);
+                            setReceiveItemsForm(newForm);
+                          }}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs text-[var(--text-secondary)]">رقم التشغيلة (Batch No)</label>
+                        <input 
+                          type="text" required
+                          value={item.batchNumber}
+                          onChange={(e) => {
+                            const newForm = [...receiveItemsForm];
+                            newForm[index].batchNumber = e.target.value;
+                            setReceiveItemsForm(newForm);
+                          }}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-sm font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs text-[var(--text-secondary)]">تاريخ الإنتاج (اختياري)</label>
+                        <DatePicker 
+                          value={item.manufactureDate}
+                          onChange={(val) => {
+                            const newForm = [...receiveItemsForm];
+                            newForm[index].manufactureDate = val;
+                            setReceiveItemsForm(newForm);
+                          }}
+                          placeholder="اختر تاريخ الإنتاج"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs text-[var(--text-secondary)]">تاريخ الانتهاء (إلزامي)</label>
+                        <DatePicker 
+                          value={item.expiryDate}
+                          onChange={(val) => {
+                            const newForm = [...receiveItemsForm];
+                            newForm[index].expiryDate = val;
+                            setReceiveItemsForm(newForm);
+                          }}
+                          placeholder="اختر تاريخ الانتهاء"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
+              <div className="flex justify-end gap-3 pt-2">
+                <button 
+                  type="submit"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium cursor-pointer font-bold"
+                >
+                  تأكيد واعتماد دخول المخزون
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Printable Footer - Matching Invoices Template */}
+      {settings?.invoiceFooter && (
+        <div className="hidden print:block mt-12 pt-4 border-t border-dashed border-gray-200 text-center text-xs text-gray-500">
+          {settings.invoiceFooter}
+        </div>
+      )}
     </div>
+
   );
 }
