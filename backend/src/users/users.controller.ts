@@ -20,6 +20,7 @@ export class UsersController {
       email?: string;
       password?: string;
       role: Role;
+      permissions?: any;
     },
   ) {
     return this.usersService.create(dto);
@@ -35,6 +36,7 @@ export class UsersController {
       email?: string;
       role?: Role;
       password?: string;
+      permissions?: any;
     },
   ) {
     return this.usersService.update(id, dto);

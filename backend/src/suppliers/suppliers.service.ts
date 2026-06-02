@@ -148,4 +148,34 @@ export class SuppliersService {
       });
     });
   }
+
+  async update(id: string, data: any) {
+    return this.prisma.supplier.update({
+      where: { id },
+      data: {
+        name: data.name,
+        companyName: data.companyName,
+        type: data.type,
+        phone: data.phone,
+        email: data.email,
+        country: data.country,
+        city: data.city,
+        address: data.address,
+        commercialReg: data.commercialReg,
+        contactPerson: data.contactPerson,
+        contactPhone: data.contactPhone,
+        creditLimit: data.creditLimit !== undefined ? Number(data.creditLimit) : undefined,
+        paymentTerms: data.paymentTerms as PaymentTerms,
+        currency: data.currency,
+        notes: data.notes,
+        isActive: data.isActive,
+      },
+    });
+  }
+
+  async delete(id: string) {
+    return this.prisma.supplier.delete({
+      where: { id },
+    });
+  }
 }

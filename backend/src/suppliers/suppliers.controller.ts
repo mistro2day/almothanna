@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { SuppliersService } from './suppliers.service';
 
 @Controller('suppliers')
@@ -13,6 +13,16 @@ export class SuppliersController {
   @Post()
   async createSupplier(@Body() dto: any) {
     return this.suppliersService.create(dto);
+  }
+
+  @Put(':id')
+  async updateSupplier(@Param('id') id: string, @Body() dto: any) {
+    return this.suppliersService.update(id, dto);
+  }
+
+  @Delete(':id')
+  async deleteSupplier(@Param('id') id: string) {
+    return this.suppliersService.delete(id);
   }
 
   @Get('purchase-orders')

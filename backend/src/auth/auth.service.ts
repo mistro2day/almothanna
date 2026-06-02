@@ -40,6 +40,7 @@ export class AuthService {
         phone: user.phone,
         email: user.email,
         role: user.role,
+        permissions: user.permissions,
       },
       token,
     };

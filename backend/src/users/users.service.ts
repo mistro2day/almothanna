@@ -15,6 +15,7 @@ export class UsersService {
         phone: true,
         email: true,
         role: true,
+        permissions: true,
         createdAt: true,
       },
       orderBy: { name: 'asc' },
@@ -27,6 +28,7 @@ export class UsersService {
     email?: string;
     password?: string;
     role: Role;
+    permissions?: any;
   }) {
     const existingUser = await this.prisma.user.findFirst({
       where: {
@@ -51,6 +53,7 @@ export class UsersService {
         email: data.email || null,
         password: hashedPassword,
         role: data.role,
+        permissions: data.permissions || null,
       },
       select: {
         id: true,
@@ -58,6 +61,7 @@ export class UsersService {
         phone: true,
         email: true,
         role: true,
+        permissions: true,
         createdAt: true,
       },
     });
@@ -71,6 +75,7 @@ export class UsersService {
       email?: string;
       role?: Role;
       password?: string;
+      permissions?: any;
     },
   ) {
     const updateData: any = { ...data };
@@ -90,6 +95,7 @@ export class UsersService {
         phone: true,
         email: true,
         role: true,
+        permissions: true,
         createdAt: true,
       },
     });

@@ -109,6 +109,15 @@ export default function InstallmentsCalendar() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   };
 
+  // Safe helper to format Date object into local YYYY-MM-DD string without timezone shifts
+  const formatDateToLocal = (date: Date | null) => {
+    if (!date) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Generate calendar days
   const getDaysInMonth = () => {
     const year = currentDate.getFullYear();
@@ -136,13 +145,13 @@ export default function InstallmentsCalendar() {
 
   const getDayInstallments = (date: Date) => {
     if (!date) return [];
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatDateToLocal(date);
     return installments.filter(inst => inst.dueDate.startsWith(dateStr) && inst.status !== 'PAID');
   };
 
   const handleDateClick = (date: Date) => {
     if (!date) return;
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatDateToLocal(date);
     setSelectedDateStr(dateStr);
     setSelectedDateInstallments(getDayInstallments(date));
   };
@@ -346,7 +355,7 @@ export default function InstallmentsCalendar() {
             <td>${inst.customerName}</td>
             <td style="mso-number-format:'\\@';">${inst.customerPhone}</td>
             <td style="mso-number-format:'\\@';">${inst.saleId}</td>
-            <td>${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</td>
+            <td>${new Date(inst.dueDate).toLocaleDateString('en-US')}</td>
             <td>${inst.amount}</td>
             <td>${inst.paidAmount}</td>
             <td>${remaining}</td>
@@ -377,7 +386,7 @@ export default function InstallmentsCalendar() {
           <td>${inst.customerName}</td>
           <td style="mso-number-format:'\\@';">${inst.customerPhone}</td>
           <td style="mso-number-format:'\\@';">${inst.saleId}</td>
-          <td>${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</td>
+          <td>${new Date(inst.dueDate).toLocaleDateString('en-US')}</td>
           <td>${inst.amount}</td>
           <td>${inst.paidAmount}</td>
           <td>${remaining}</td>
@@ -420,7 +429,7 @@ export default function InstallmentsCalendar() {
             ${settings?.email ? ` | بريد: ${settings.email}` : ''}
           </td></tr>
           <tr><td colspan="8" class="header-row" style="font-size: 14px; color: #4b5563; font-weight: bold;">كشف الأقساط والدفعات المستحقة والقادمة</td></tr>
-          <tr><td colspan="8">تاريخ التصدير: ${new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}</td></tr>
+          <tr><td colspan="8">تاريخ التصدير: ${new Date().toLocaleString('en-US')}</td></tr>
           <tr><td colspan="8"></td></tr>
           <tr>
             <th>العميل</th>
@@ -452,23 +461,26 @@ export default function InstallmentsCalendar() {
     let rowsHtml = '';
     activeInsts.forEach((inst, index) => {
       const remaining = inst.amount - inst.paidAmount;
-      const isOverdue = new Date(inst.dueDate) < new Date() ? 'متأخر' : 'مستحق';
+      const isOverdue = new Date(inst.dueDate) < new Date();
+      const statusText = isOverdue ? 'متأخر' : 'مستحق';
       rowsHtml += `
         <tr style="background-color: ${index % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: right;">
-            <strong>${inst.customerName}</strong><br/>
-            <span style="font-size: 11px; color: #64748b;">${inst.customerPhone}</span>
+          <td style="border: 1px solid #e2e8f0; padding: 12px 10px; text-align: right; color: #1e293b;">
+            <strong style="color: #0f172a; font-size: 13px;">${inst.customerName}</strong><br/>
+            <span style="font-size: 11px; color: #64748b;">📞 ${inst.customerPhone}</span>
           </td>
-          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; font-family: monospace;">${inst.saleId}</td>
-          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center;">${new Date(inst.dueDate).toLocaleDateString('ar-EG', { numberingSystem: 'latn' })}</td>
-          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; font-weight: bold;">${inst.amount.toLocaleString()} SDG</td>
-          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; color: #10b981;">${inst.paidAmount.toLocaleString()} SDG</td>
-          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center; color: #f59e0b; font-weight: bold;">${remaining.toLocaleString()} SDG</td>
-          <td style="border: 1px solid #e2e8f0; padding: 10px; text-align: center;">
-            <span style="padding: 4px 8px; border-radius: 9999px; font-size: 11px; font-weight: bold; 
-              background-color: ${isOverdue === 'متأخر' ? '#fee2e2' : '#fef3c7'}; 
-              color: ${isOverdue === 'متأخر' ? '#ef4444' : '#d97706'};">
-              ${isOverdue}
+          <td style="border: 1px solid #e2e8f0; padding: 12px 10px; text-align: center; font-family: monospace; font-weight: bold; color: #475569;">${inst.saleId}</td>
+          <td style="border: 1px solid #e2e8f0; padding: 12px 10px; text-align: center; font-weight: bold; color: #334155;">${new Date(inst.dueDate).toLocaleDateString('en-US')}</td>
+          <td style="border: 1px solid #e2e8f0; padding: 12px 10px; text-align: center; font-weight: bold; color: #0f766e;">${inst.amount.toLocaleString()} SDG</td>
+          <td style="border: 1px solid #e2e8f0; padding: 12px 10px; text-align: center; color: #16a34a; font-weight: bold;">${inst.paidAmount.toLocaleString()} SDG</td>
+          <td style="border: 1px solid #e2e8f0; padding: 12px 10px; text-align: center; color: #ea580c; font-weight: bold;">${remaining.toLocaleString()} SDG</td>
+          <td style="border: 1px solid #e2e8f0; padding: 12px 10px; text-align: center;">
+            <span style="padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: bold; 
+              background-color: ${isOverdue ? '#fee2e2' : '#fef3c7'}; 
+              color: ${isOverdue ? '#ef4444' : '#d97706'};
+              border: 1px solid ${isOverdue ? '#fca5a5' : '#fde047'};
+              display: inline-block;">
+              ${statusText}
             </span>
           </td>
         </tr>
@@ -482,29 +494,141 @@ export default function InstallmentsCalendar() {
       <head>
         <title>كشف_الأقساط_المستحقة_والقادمة</title>
         <style>
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; }
-          .header { text-align: center; border-bottom: 2px solid #10b981; padding-bottom: 15px; margin-bottom: 30px; }
-          .logo { font-size: 24px; font-weight: bold; color: #10b981; }
-          .title { font-size: 18px; font-weight: bold; color: #475569; margin-top: 5px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th { background-color: #10b981; color: white; font-weight: bold; border: 1px solid #e2e8f0; padding: 12px; text-align: center; }
-          .footer { text-align: center; margin-top: 40px; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; }
-          @media print {
-            body { padding: 0; }
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap');
+          @page {
+            size: landscape;
+            margin: 15mm;
+          }
+          body { 
+            font-family: 'Tajawal', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 10px; 
+            color: #1e293b; 
+            direction: rtl; 
+            background-color: #ffffff;
+          }
+          .header-box { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 25px; 
+            border-bottom: 2px solid #e2e8f0; 
+            padding-bottom: 15px; 
+          }
+          .company-name { 
+            font-size: 26px; 
+            font-weight: 900; 
+            color: #0f766e; 
+            text-align: right; 
+          }
+          .company-details { 
+            font-size: 12px; 
+            color: #475569; 
+            line-height: 1.6; 
+            margin-top: 5px;
+          }
+          .report-title { 
+            font-size: 22px; 
+            font-weight: bold; 
+            color: #0f172a; 
+            text-align: center; 
+            margin-top: 20px; 
+            margin-bottom: 10px; 
+            position: relative;
+          }
+          .report-title::after {
+            content: '';
+            display: block;
+            width: 80px;
+            height: 4px;
+            background: linear-gradient(90deg, #0f766e, #14b8a6);
+            margin: 8px auto 0;
+            border-radius: 2px;
+          }
+          .meta-text { 
+            font-size: 12px; 
+            color: #64748b; 
+            text-align: left; 
+            vertical-align: top; 
+            line-height: 1.6;
+          }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 25px; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            overflow: hidden;
+          }
+          th { 
+            background: linear-gradient(135deg, #0f766e, #0d9488) !important; 
+            color: white !important; 
+            font-weight: 700; 
+            border: 1px solid #0f766e; 
+            padding: 14px 12px; 
+            text-align: center; 
+            font-size: 13px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          td { 
+            border: 1px solid #e2e8f0; 
+            padding: 12px; 
+            font-size: 12px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .footer { 
+            text-align: center; 
+            margin-top: 50px; 
+            font-size: 12px; 
+            color: #94a3b8; 
+            border-top: 1px dashed #cbd5e1; 
+            padding-top: 20px; 
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          <div class="logo">${settings?.name || 'مجموعة الأنصار للمشروعات والخدمات الطبية'}</div>
-          <div style="font-size: 11px; color: #64748b; margin-top: 5px;">
-            ${settings?.address ? `العنوان: ${settings.address}` : ''} 
-            ${settings?.phone ? ` | هاتف: ${settings.phone}` : ''}
-            ${settings?.email ? ` | بريد: ${settings.email}` : ''}
-          </div>
-          <div class="title" style="margin-top: 10px;">كشف الأقساط والدفعات المستحقة والقادمة للعملاء</div>
-          <div style="font-size: 12px; color: #64748b; margin-top: 5px;">تاريخ استخراج التقرير: ${new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}</div>
-        </div>
+        <table class="header-box" style="border: none; margin-bottom: 20px;">
+          <tr style="border: none;">
+            <td style="border: none; text-align: right; padding: 0;" colspan="3">
+              <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 5px;">
+                ${settings?.logo 
+                  ? `<img src="${settings.logo}" style="height: 65px; max-width: 180px; object-fit: contain;" />` 
+                  : `<svg width="65" height="65" viewBox="0 0 120 120" style="vertical-align: middle;">
+                       <defs>
+                         <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                           <stop offset="0%" stop-color="#0f766e" />
+                           <stop offset="100%" stop-color="#14b8a6" />
+                         </linearGradient>
+                         <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+                           <feDropShadow dx="0" dy="4" stdDeviation="4" flood-opacity="0.1" />
+                         </filter>
+                       </defs>
+                       <circle cx="60" cy="60" r="52" fill="#ffffff" filter="url(#shadow)" />
+                       <circle cx="60" cy="60" r="46" fill="none" stroke="url(#logoGrad)" stroke-width="4" />
+                       <!-- Stylized letter M for Mothanna + Medical Cross -->
+                       <path d="M35 80 L35 40 L50 62 L60 52 L70 62 L85 40 L85 80" stroke="url(#logoGrad)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                       <circle cx="60" cy="80" r="8" fill="#14b8a6" />
+                       <path d="M60 28 L60 40 M54 34 L66 34" stroke="#0f766e" stroke-width="4" stroke-linecap="round" />
+                     </svg>`
+                }
+                <div>
+                  <div class="company-name" style="margin: 0; line-height: 1.2;">${settings?.name || 'صيدلية المثنى الحديثة'}</div>
+                  <div class="company-details" style="margin-top: 5px;">
+                    🏢 العنوان: ${settings?.address || 'العنوان غير محدد'}<br>
+                    📞 الهاتف: ${settings?.phone || '---'} ${settings?.email ? ` | 📧 البريد: ${settings.email}` : ''}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td style="border: none; text-align: left; padding: 0; vertical-align: top;" colspan="4" class="meta-text">
+              تاريخ استخراج التقرير: ${new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}<br>
+              ${settings?.taxNumber ? `الرقم الضريبي: ${settings.taxNumber}` : ''}
+            </td>
+          </tr>
+        </table>
+
+        <div class="report-title">كشف الأقساط والدفعات المستحقة والقادمة للعملاء</div>
+
         <table>
           <thead>
             <tr>
@@ -521,8 +645,9 @@ export default function InstallmentsCalendar() {
             ${rowsHtml}
           </tbody>
         </table>
+
         <div class="footer">
-          <p>تم توليد هذا التقرير تلقائياً بواسطة نظام إدارة الأنصار الطبي</p>
+          <p>${settings?.invoiceFooter || 'تم توليد هذا التقرير تلقائياً بواسطة نظام إدارة صيدلية المثنى الحديثة'}</p>
         </div>
         <script>
           window.onload = function() { window.print(); }
@@ -622,8 +747,8 @@ export default function InstallmentsCalendar() {
               if (!day) return <div key={`empty-${idx}`} className="h-16 sm:h-[82px] bg-[var(--border-color)]/5 rounded-xl border border-[var(--border-color)]/10" />;
               
               const dayInsts = getDayInstallments(day);
-              const isSelected = selectedDateStr === day.toISOString().split('T')[0];
-              const isToday = new Date().toISOString().split('T')[0] === day.toISOString().split('T')[0];
+              const isSelected = selectedDateStr === formatDateToLocal(day);
+              const isToday = formatDateToLocal(new Date()) === formatDateToLocal(day);
               
               const tooltipText = dayInsts.length > 0
                 ? dayInsts.map(inst => 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSettingsStore, CompanySettings, ManagedUser } from '../store/useSettingsStore';
-import { useAuthStore } from '../store/useAuthStore';
+import { useAuthStore, getDefaultPermissions } from '../store/useAuthStore';
 import { useActivityStore } from '../store/useActivityStore';
 import { 
   Building, 
@@ -37,7 +37,7 @@ export default function Settings() {
 
   const { activities, loadingActivities, fetchActivities } = useActivityStore();
 
-  const [activeSubTab, setActiveSubTab] = useState<'company' | 'users' | 'activities'>('company');
+  const [activeSubTab, setActiveSubTab] = useState<'company' | 'users' | 'activities' | 'permissions'>('company');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -72,6 +72,10 @@ export default function Settings() {
     password: '',
     role: 'SALES' as any
   });
+
+  // Permissions State
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [userPermissions, setUserPermissions] = useState<any>(null);
 
   const roleLabels: Record<string, string> = {
     ADMIN: 'مدير النظام',
@@ -207,6 +211,64 @@ export default function Settings() {
     }
   };
 
+  // Load permissions when selected user changes
+  useEffect(() => {
+    if (!selectedUserId) {
+      setUserPermissions(null);
+      return;
+    }
+    const targetUser = users.find(u => u.id === selectedUserId);
+    if (targetUser) {
+      const perms = targetUser.permissions || getDefaultPermissions(targetUser.role);
+      setUserPermissions(JSON.parse(JSON.stringify(perms))); // deep copy
+    }
+  }, [selectedUserId, users]);
+
+  // Handle Save Permissions
+  const handleSavePermissions = async () => {
+    if (!selectedUserId || !userPermissions) return;
+    try {
+      const targetUser = users.find(u => u.id === selectedUserId);
+      const nameStr = targetUser ? targetUser.name : selectedUserId;
+      const updatedUser = await updateUser(selectedUserId, { permissions: userPermissions });
+      
+      // If the updated user is the currently logged-in user, refresh their session in real-time
+      if (currentUser && currentUser.id === selectedUserId) {
+        const currentToken = useAuthStore.getState().token;
+        if (currentToken) {
+          useAuthStore.getState().login(updatedUser as any, currentToken);
+        }
+      }
+
+      useActivityStore.getState().logActivity('تعديل صلاحيات مستخدم', `تم تعديل صلاحيات المستخدم التفصيلية لـ ${nameStr}`);
+      showNotification('تم تحديث صلاحيات المستخدم بنجاح ✨');
+      fetchUsers();
+    } catch (err: any) {
+      console.error(err);
+      showNotification('فشل في حفظ الصلاحيات المخصصة', true);
+    }
+  };
+
+  // Toggle single permission key
+  const handleTogglePermission = (path: 'pages' | 'buttons', section: string, key?: string) => {
+    setUserPermissions((prev: any) => {
+      if (!prev) return prev;
+      const updated = { ...prev };
+      if (path === 'pages') {
+        updated.pages = { ...updated.pages, [section]: !updated.pages[section] };
+      } else if (path === 'buttons' && key) {
+        updated.buttons = {
+          ...updated.buttons,
+          [section]: {
+            ...updated.buttons[section],
+            [key]: !updated.buttons[section]?.[key]
+          }
+        };
+      }
+      return updated;
+    });
+  };
+
   return (
     <div className="space-y-6" dir="rtl">
       {/* Toast Notifications */}
@@ -257,8 +319,22 @@ export default function Settings() {
           style={{ flexShrink: 0 }}
         >
           <Users className="w-4 h-4" />
-          <span>المستخدمين والصلاحيات</span>
+          <span>المستخدمين</span>
         </button>
+        {currentUser?.role === 'ADMIN' && (
+          <button
+            onClick={() => setActiveSubTab('permissions')}
+            className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer shrink-0 flex-shrink-0 whitespace-nowrap ${
+              activeSubTab === 'permissions'
+                ? 'border-emerald-500 text-emerald-500 bg-emerald-500/5'
+                : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+            style={{ flexShrink: 0 }}
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span>الصلاحيات التفصيلية</span>
+          </button>
+        )}
         <button
           onClick={() => setActiveSubTab('activities')}
           className={`flex items-center gap-2 px-6 py-3 border-b-2 text-sm font-semibold transition-all cursor-pointer shrink-0 flex-shrink-0 whitespace-nowrap ${
@@ -516,6 +592,267 @@ export default function Settings() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab 3: Detailed Permissions Management */}
+      {activeSubTab === 'permissions' && currentUser?.role === 'ADMIN' && (
+        <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] animate-fade-in text-right">
+          <div className="mb-6">
+            <h2 className="text-lg sm:text-xl font-semibold text-[var(--text-primary)]">إدارة الصلاحيات التفصيلية للمستخدمين</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              حدد بدقة متناهية أي صفحة، زر، تبويب، أو إجراء مسموح به لكل موظف على حدة بناءً على مسؤوليته.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* User Selection Sidebar */}
+            <div className="lg:col-span-1 space-y-4">
+              <span className="text-xs font-bold text-[var(--text-secondary)] block">اختر الموظف لتعديل صلاحياته:</span>
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                {users.map((u) => {
+                  const isSelected = selectedUserId === u.id;
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => setSelectedUserId(u.id)}
+                      className={`w-full flex items-center justify-between p-3.5 rounded-2xl border text-right transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-600/10 border-emerald-500 text-emerald-500 shadow-md shadow-emerald-500/5'
+                          : 'bg-[var(--bg-secondary)] border-[var(--border-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-primary)]'
+                      }`}
+                    >
+                      <div className="text-right">
+                        <p className="text-xs font-black">{u.name}</p>
+                        <p className="text-[10px] text-[var(--text-secondary)] font-mono mt-0.5">{u.phone}</p>
+                      </div>
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-[var(--border-color)] font-bold">
+                        {roleLabels[u.role] || u.role}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Permissions Grid Editor */}
+            <div className="lg:col-span-3">
+              {!selectedUserId || !userPermissions ? (
+                <div className="h-full min-h-[300px] border border-dashed border-[var(--border-color)] rounded-3xl flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-secondary)]/30">
+                  <div className="p-4 bg-emerald-500/10 text-emerald-500 rounded-full mb-3 animate-pulse">
+                    <ShieldAlert className="w-10 h-10" />
+                  </div>
+                  <h4 className="text-base font-bold text-[var(--text-primary)]">لم يتم اختيار موظف بعد</h4>
+                  <p className="text-xs text-[var(--text-secondary)] max-w-xs mt-1">
+                    يرجى تحديد أحد مستخدمي النظام من القائمة الجانبية لعرض وتعديل صلاحياته التفصيلية للأزرار والصفحات.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6 animate-fade-in">
+                  {/* Selected User Header Card */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 rounded-2xl bg-[var(--bg-secondary)]/50 border border-[var(--border-color)] gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-black text-sm">
+                        {users.find(u => u.id === selectedUserId)?.name.slice(0, 1)}
+                      </div>
+                      <div className="text-right">
+                        <h4 className="text-sm font-black text-[var(--text-primary)]">
+                          {users.find(u => u.id === selectedUserId)?.name}
+                        </h4>
+                        <span className="inline-block text-[9px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-extrabold mt-1">
+                          {roleLabels[users.find(u => u.id === selectedUserId)?.role || ''] || 'مستخدم'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleSavePermissions}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/10 transition-all cursor-pointer self-stretch sm:self-auto justify-center"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>حفظ صلاحيات الموظف</span>
+                    </button>
+                  </div>
+
+                  {/* 1. Pages Permissions */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest border-b border-[var(--border-color)] pb-1.5">
+                      1. صلاحيات رؤية الصفحات الرئيسية (Page Access)
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        { key: 'dashboard', label: 'لوحة التحكم (Dashboard)' },
+                        { key: 'inventory', label: 'المخزون الدوائي (Inventory)' },
+                        { key: 'sales', label: 'إصدار الفواتير والمبيعات (Sales)' },
+                        { key: 'calendar', label: 'تقويم الدفعات (Calendar)' },
+                        { key: 'customers', label: 'العملاء والشحن (Customers)' },
+                        { key: 'suppliers', label: 'الموردين (Suppliers)' },
+                        { key: 'reports', label: 'التقارير الذكية (Reports)' },
+                        { key: 'settings', label: 'الإعدادات (Settings)' },
+                      ].map((page) => (
+                        <label
+                          key={page.key}
+                          className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/20 cursor-pointer hover:bg-[var(--border-color)]/30 transition-colors"
+                        >
+                          <span className="text-xs font-bold text-[var(--text-primary)]">{page.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={!!userPermissions.pages?.[page.key]}
+                            onChange={() => handleTogglePermission('pages', page.key)}
+                            className="w-4.5 h-4.5 rounded border-[var(--border-color)] text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Inventory Section Buttons */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest border-b border-[var(--border-color)] pb-1.5">
+                      2. أزرار وإجراءات المخزون الدوائي
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        { key: 'addProduct', label: 'إضافة منتج جديد' },
+                        { key: 'editProduct', label: 'تعديل بيانات منتج' },
+                        { key: 'deleteProduct', label: 'حذف منتج نهائياً' },
+                        { key: 'addBatch', label: 'إضافة باتش (تشغيلة)' },
+                        { key: 'editBatch', label: 'تعديل تشغيلة' },
+                        { key: 'deleteBatch', label: 'حذف تشغيلة' },
+                        { key: 'exportExcel', label: 'تصدير المخزون لملف Excel' },
+                      ].map((btn) => (
+                        <label
+                          key={btn.key}
+                          className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/20 cursor-pointer hover:bg-[var(--border-color)]/30 transition-colors"
+                        >
+                          <span className="text-xs font-bold text-[var(--text-primary)]">{btn.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={!!userPermissions.buttons?.inventory?.[btn.key]}
+                            onChange={() => handleTogglePermission('buttons', 'inventory', btn.key)}
+                            className="w-4.5 h-4.5 rounded border-[var(--border-color)] text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. Sales & Invoicing Section */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest border-b border-[var(--border-color)] pb-1.5">
+                      3. أزرار الفواتير والمبيعات
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        { key: 'createInvoice', label: 'إنشاء وحفظ فاتورة مبيعات' },
+                        { key: 'cancelInvoice', label: 'إلغاء فاتورة مبيعات معتمدة' },
+                        { key: 'viewProfit', label: 'رؤية هوامش الأرباح وأسعار التكلفة' },
+                      ].map((btn) => (
+                        <label
+                          key={btn.key}
+                          className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/20 cursor-pointer hover:bg-[var(--border-color)]/30 transition-colors"
+                        >
+                          <span className="text-xs font-bold text-[var(--text-primary)]">{btn.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={!!userPermissions.buttons?.sales?.[btn.key]}
+                            onChange={() => handleTogglePermission('buttons', 'sales', btn.key)}
+                            className="w-4.5 h-4.5 rounded border-[var(--border-color)] text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 4. Customers & Deliveries Section */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest border-b border-[var(--border-color)] pb-1.5">
+                      4. أزرار العملاء وحركات الشحن
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        { key: 'addCustomer', label: 'إضافة عميل جديد' },
+                        { key: 'editCustomer', label: 'تعديل عميل' },
+                        { key: 'deleteCustomer', label: 'حذف عميل' },
+                        { key: 'manageReps', label: 'إدارة المناديب والعمولات' },
+                        { key: 'manageDeliveries', label: 'تحديث حالات توصيل الشحنات' },
+                      ].map((btn) => (
+                        <label
+                          key={btn.key}
+                          className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/20 cursor-pointer hover:bg-[var(--border-color)]/30 transition-colors"
+                        >
+                          <span className="text-xs font-bold text-[var(--text-primary)]">{btn.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={!!userPermissions.buttons?.customers?.[btn.key]}
+                            onChange={() => handleTogglePermission('buttons', 'customers', btn.key)}
+                            className="w-4.5 h-4.5 rounded border-[var(--border-color)] text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 5. Suppliers & Purchasing Section */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest border-b border-[var(--border-color)] pb-1.5">
+                      5. أزرار الموردين والطلبيات الشراء
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        { key: 'addSupplier', label: 'إضافة مورد جديد' },
+                        { key: 'editSupplier', label: 'تعديل بيانات مورد' },
+                        { key: 'deleteSupplier', label: 'حذف مورد' },
+                        { key: 'manageOrders', label: 'إنشاء/استلام أوامر الشراء' },
+                        { key: 'managePayments', label: 'إضافة مدفوعات الموردين' },
+                      ].map((btn) => (
+                        <label
+                          key={btn.key}
+                          className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/20 cursor-pointer hover:bg-[var(--border-color)]/30 transition-colors"
+                        >
+                          <span className="text-xs font-bold text-[var(--text-primary)]">{btn.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={!!userPermissions.buttons?.suppliers?.[btn.key]}
+                            onChange={() => handleTogglePermission('buttons', 'suppliers', btn.key)}
+                            className="w-4.5 h-4.5 rounded border-[var(--border-color)] text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 6. Settings & Security Section */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest border-b border-[var(--border-color)] pb-1.5">
+                      6. صلاحيات الإعدادات العامة والأمان
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        { key: 'editCompany', label: 'تعديل بيانات الشركة والشعار' },
+                        { key: 'manageUsers', label: 'إدارة وإضافة المستخدمين الجدد' },
+                        { key: 'viewActivities', label: 'استعراض سجل نشاطات النظام' },
+                        { key: 'managePermissions', label: 'التحكم بالصلاحيات التفصيلية' },
+                      ].map((btn) => (
+                        <label
+                          key={btn.key}
+                          className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/20 cursor-pointer hover:bg-[var(--border-color)]/30 transition-colors"
+                        >
+                          <span className="text-xs font-bold text-[var(--text-primary)]">{btn.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={!!userPermissions.buttons?.settings?.[btn.key]}
+                            onChange={() => handleTogglePermission('buttons', 'settings', btn.key)}
+                            className="w-4.5 h-4.5 rounded border-[var(--border-color)] text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

@@ -85,6 +85,7 @@ export default function Inventory() {
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [additionalQty, setAdditionalQty] = useState<number>(0);
   const [addingQtyLoading, setAddingQtyLoading] = useState(false);
+  const [receiveLoading, setReceiveLoading] = useState(false);
 
   // Autocomplete UI States
   const [productSuggestions, setProductSuggestions] = useState<typeof COMMON_MEDICINES_DICTIONARY>([]);
@@ -228,7 +229,8 @@ export default function Inventory() {
 
   const handleReceivePO = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPO) return;
+    if (!selectedPO || receiveLoading) return;
+    setReceiveLoading(true);
     try {
       await receivePurchaseOrder(selectedPO.id, receiveItemsForm);
       useActivityStore.getState().logActivity(
@@ -241,6 +243,8 @@ export default function Inventory() {
     } catch (err) {
       console.error(err);
       alert('فشل في استلام أمر الشراء');
+    } finally {
+      setReceiveLoading(false);
     }
   };
 
@@ -1495,9 +1499,17 @@ export default function Inventory() {
               <div className="flex justify-end gap-3 pt-2">
                 <button 
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium cursor-pointer font-bold"
+                  disabled={receiveLoading}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-medium cursor-pointer font-bold flex items-center justify-center gap-2"
                 >
-                  تأكيد واعتماد دخول المخزون
+                  {receiveLoading ? (
+                    <>
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>جاري الاعتماد...</span>
+                    </>
+                  ) : (
+                    <span>تأكيد واعتماد دخول المخزون</span>
+                  )}
                 </button>
               </div>
             </form>

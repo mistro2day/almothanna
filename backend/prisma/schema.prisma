@@ -25,6 +25,7 @@ model User {
   email         String?        @unique
   password      String
   role          Role           @default(SALES)
+  permissions   Json?          // Detailed custom user permissions
   activities    Activity[]
   notifications Notification[]
   createdAt     DateTime       @default(now())

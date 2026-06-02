@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useSupplierStore, Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from '../store/useSupplierStore';
 import { useInventoryStore } from '../store/useInventoryStore';
 import { useActivityStore } from '../store/useActivityStore';
+import { useAuthStore, hasPermission } from '../store/useAuthStore';
 import {
   Building2,
   Plus,
@@ -62,11 +63,14 @@ const purchaseStatusMap: Record<string, { label: string; color: string }> = {
 };
 
 export default function Suppliers() {
+  const { user } = useAuthStore();
   const {
     suppliers,
     purchaseOrders,
     payments,
     addSupplier,
+    updateSupplier,
+    deleteSupplier,
     addPurchaseOrder,
     addPayment,
     getSupplierTotalPurchases,
@@ -81,6 +85,8 @@ export default function Suppliers() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [showDetailView, setShowDetailView] = useState<string | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -196,6 +202,56 @@ export default function Suppliers() {
       alert('فشل في إضافة المورد');
     } finally {
       setIsSubmittingSupplier(false);
+    }
+  };
+
+  const handleEditSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSupplier || !editingSupplier.name || !editingSupplier.phone) return;
+
+    try {
+      await updateSupplier(editingSupplier.id, {
+        name: editingSupplier.name,
+        companyName: editingSupplier.companyName || undefined,
+        type: editingSupplier.type,
+        phone: editingSupplier.phone,
+        email: editingSupplier.email || undefined,
+        country: editingSupplier.country,
+        city: editingSupplier.city || undefined,
+        address: editingSupplier.address || undefined,
+        commercialReg: editingSupplier.commercialReg || undefined,
+        contactPerson: editingSupplier.contactPerson || undefined,
+        contactPhone: editingSupplier.contactPhone || undefined,
+        creditLimit: Number(editingSupplier.creditLimit),
+        paymentTerms: editingSupplier.paymentTerms,
+        currency: editingSupplier.currency,
+        notes: editingSupplier.notes || undefined,
+      });
+      useActivityStore.getState().logActivity(
+        'تعديل بيانات مورد',
+        `تم تحديث بيانات المورد ${editingSupplier.name} بنجاح`
+      );
+      setShowEditModal(false);
+      setEditingSupplier(null);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في تحديث بيانات المورد');
+    }
+  };
+
+  const handleDeleteSupplier = async (id: string, name: string) => {
+    if (!window.confirm(`هل أنت متأكد من رغبتك في حذف المورد "${name}" نهائياً؟`)) return;
+
+    try {
+      await deleteSupplier(id);
+      useActivityStore.getState().logActivity(
+        'حذف مورد',
+        `تم حذف حساب المورد ${name} نهائياً`
+      );
+      setShowDetailView(null);
+    } catch (err) {
+      console.error(err);
+      alert('فشل في حذف المورد، قد يكون مرتبطاً بطلبيات شراء مسجلة');
     }
   };
 
@@ -316,20 +372,43 @@ export default function Suppliers() {
           </div>
 
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowPurchaseModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm transition-colors cursor-pointer"
-            >
-              <ShoppingBag className="w-4 h-4" />
-              <span>أمر شراء جديد</span>
-            </button>
-            <button
-              onClick={() => setShowPaymentModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors cursor-pointer"
-            >
-              <Banknote className="w-4 h-4" />
-              <span>تسجيل دفعة</span>
-            </button>
+            {hasPermission(user, 'button', 'suppliers', 'editSupplier') && (
+              <button
+                onClick={() => {
+                  setEditingSupplier(detailSupplier);
+                  setShowEditModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-amber-600/90 hover:bg-amber-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                <span>تعديل المورد</span>
+              </button>
+            )}
+            {hasPermission(user, 'button', 'suppliers', 'deleteSupplier') && (
+              <button
+                onClick={() => handleDeleteSupplier(detailSupplier.id, detailSupplier.name)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-rose-600/90 hover:bg-rose-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                <span>حذف المورد</span>
+              </button>
+            )}
+            {hasPermission(user, 'button', 'suppliers', 'manageOrders') && (
+              <button
+                onClick={() => setShowPurchaseModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span>أمر شراء جديد</span>
+              </button>
+            )}
+            {hasPermission(user, 'button', 'suppliers', 'managePayments') && (
+              <button
+                onClick={() => setShowPaymentModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                <Banknote className="w-3.5 h-3.5" />
+                <span>تسجيل دفعة</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -754,13 +833,15 @@ export default function Suppliers() {
           <p className="text-[var(--text-secondary)] mt-1 text-sm sm:text-base">تتبع شركات الأدوية والموزعين والمصانع مع البيانات المالية</p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer touch-target w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>إضافة مورد جديد</span>
-        </button>
+        {hasPermission(user, 'button', 'suppliers', 'addSupplier') && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer touch-target w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>إضافة مورد جديد</span>
+          </button>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -1135,6 +1216,225 @@ export default function Suppliers() {
                   {isSubmittingSupplier ? 'جاري تسجيل المورد...' : 'تسجيل المورد'}
                 </button>
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-5 py-2.5 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl font-medium cursor-pointer">إلغاء</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========== Edit Supplier Modal ========== */}
+      {showEditModal && editingSupplier && (
+        <div className="modal-overlay">
+          <div className="modal-content-card modal-supplier max-w-2xl" dir="rtl">
+            <div className="modal-glow-back bg-amber-500/5" />
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold text-[var(--text-primary)]">تعديل بيانات المورد - {editingSupplier.name}</h3>
+              <button onClick={() => { setShowEditModal(false); setEditingSupplier(null); }} className="p-1.5 rounded-lg hover:bg-[var(--border-color)] text-[var(--text-secondary)] cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+
+            <form onSubmit={handleEditSupplier} className="space-y-4 text-sm">
+              {/* Basic Info Section */}
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider">البيانات الأساسية للمورد</h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">اسم المورد *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSupplier.name}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, name: e.target.value })}
+                    placeholder="اسم المورد أو الوكيل"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">اسم الشركة</label>
+                  <input
+                    type="text"
+                    value={editingSupplier.companyName || ''}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, companyName: e.target.value })}
+                    placeholder="اسم الشركة الرسمي"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">نوع المورد</label>
+                  <select
+                    value={editingSupplier.type}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, type: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  >
+                    <option value="pharma_company">شركة أدوية</option>
+                    <option value="wholesaler">موزع جملة</option>
+                    <option value="manufacturer">مصنع</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">رقم الهاتف *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSupplier.phone}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, phone: e.target.value })}
+                    placeholder="رقم الموبايل"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">البريد الإلكتروني</label>
+                  <input
+                    type="email"
+                    value={editingSupplier.email || ''}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, email: e.target.value })}
+                    placeholder="email@example.com"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">الدولة</label>
+                  <input
+                    type="text"
+                    value={editingSupplier.country}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, country: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">المدينة</label>
+                  <input
+                    type="text"
+                    value={editingSupplier.city || ''}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, city: e.target.value })}
+                    placeholder="المدينة"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">العنوان التفصيلي</label>
+                  <input
+                    type="text"
+                    value={editingSupplier.address || ''}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, address: e.target.value })}
+                    placeholder="الشارع، الحي"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">رقم السجل التجاري</label>
+                  <input
+                    type="text"
+                    value={editingSupplier.commercialReg || ''}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, commercialReg: e.target.value })}
+                    placeholder="رقم السجل"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">اسم الشخص المسؤول</label>
+                  <input
+                    type="text"
+                    value={editingSupplier.contactPerson || ''}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, contactPerson: e.target.value })}
+                    placeholder="اسم المندوب"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">هاتف الشخص المسؤول</label>
+                  <input
+                    type="text"
+                    value={editingSupplier.contactPhone || ''}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, contactPhone: e.target.value })}
+                    placeholder="رقم هاتف المندوب"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1 pt-2">
+                <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider">الشروط المالية والتسهيلات</h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">الحد الائتماني (Credit Limit)</label>
+                  <input
+                    type="number"
+                    value={editingSupplier.creditLimit}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, creditLimit: Number(e.target.value) })}
+                    placeholder="0"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">فترة السداد (Terms)</label>
+                  <select
+                    value={editingSupplier.paymentTerms}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, paymentTerms: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  >
+                    <option value="CASH_ON_DELIVERY">الدفع عند الاستلام</option>
+                    <option value="NET_7">آجل 7 أيام</option>
+                    <option value="NET_15">آجل 15 يوم</option>
+                    <option value="NET_30">آجل 30 يوم</option>
+                    <option value="NET_60">آجل 60 يوم</option>
+                    <option value="NET_90">آجل 90 يوم</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[var(--text-secondary)] font-medium">العملة الافتراضية</label>
+                  <select
+                    value={editingSupplier.currency}
+                    onChange={(e) => setEditingSupplier({ ...editingSupplier, currency: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-amber-500/50"
+                  >
+                    <option value="SDG">جنيه سوداني (SDG)</option>
+                    <option value="USD">دولار أمريكي (USD)</option>
+                    <option value="EUR">يورو (EUR)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[var(--text-secondary)] font-medium">ملاحظات</label>
+                <textarea
+                  value={editingSupplier.notes || ''}
+                  onChange={(e) => setEditingSupplier({ ...editingSupplier, notes: e.target.value })}
+                  rows={2}
+                  placeholder="ملاحظات إضافية عن المورد..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none resize-none focus:border-amber-500/50"
+                />
+              </div>
+
+              <div className="flex justify-start gap-3 pt-3">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-medium cursor-pointer"
+                >
+                  حفظ التعديلات
+                </button>
+                <button type="button" onClick={() => { setShowEditModal(false); setEditingSupplier(null); }} className="px-5 py-2.5 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl font-medium cursor-pointer">إلغاء</button>
               </div>
             </form>
           </div>

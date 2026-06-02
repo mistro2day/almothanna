@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useThemeStore } from './store/useThemeStore';
-import { useAuthStore } from './store/useAuthStore';
+import { useAuthStore, hasPermission } from './store/useAuthStore';
 import { useInventoryStore } from './store/useInventoryStore';
 import { useSalesStore } from './store/useSalesStore';
 import { useSupplierStore } from './store/useSupplierStore';
@@ -177,7 +177,7 @@ export default function App() {
   const primaryContact = user.email ?? user.phone;
   const userRoleLabel = roleLabels[user.role] ?? 'مستخدم';
 
-  // Navigation options
+  // Navigation options filtered by permissions
   const navItems = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { id: 'inventory', label: 'المخزون الدوائي', icon: PackageSearch },
@@ -187,7 +187,7 @@ export default function App() {
     { id: 'suppliers', label: 'الموردين', icon: Building2 },
     { id: 'reports', label: 'التقارير الذكية', icon: BarChart3 },
     { id: 'settings', label: 'الإعدادات', icon: Settings },
-  ];
+  ].filter(item => hasPermission(user, 'page', item.id));
 
   // Render active view
   const renderView = () => {

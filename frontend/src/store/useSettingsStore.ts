@@ -22,6 +22,7 @@ export interface ManagedUser {
   phone: string;
   email: string | null;
   role: Role;
+  permissions?: any;
   createdAt: string;
 }
 
@@ -33,8 +34,8 @@ interface SettingsState {
   fetchSettings: () => Promise<CompanySettings>;
   updateSettings: (dto: Partial<CompanySettings>) => Promise<CompanySettings>;
   fetchUsers: () => Promise<ManagedUser[]>;
-  createUser: (user: { name: string; phone: string; email?: string; password?: string; role: Role }) => Promise<ManagedUser>;
-  updateUser: (id: string, user: Partial<ManagedUser> & { password?: string }) => Promise<ManagedUser>;
+  createUser: (user: { name: string; phone: string; email?: string; password?: string; role: Role; permissions?: any }) => Promise<ManagedUser>;
+  updateUser: (id: string, user: Partial<ManagedUser> & { password?: string; permissions?: any }) => Promise<ManagedUser>;
   deleteUser: (id: string) => Promise<void>;
   loadLocalCache: () => void;
 }

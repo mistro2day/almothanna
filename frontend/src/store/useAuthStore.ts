@@ -8,6 +8,7 @@ export interface User {
   phone: string;
   email?: string | null;
   role: Role;
+  permissions?: any;
 }
 
 interface AuthState {
@@ -100,3 +101,126 @@ if (typeof window !== 'undefined') {
     useAuthStore.getState().setOfflineStatus(true);
   });
 }
+
+// Default permissions fallback matrix based on role
+export const getDefaultPermissions = (role: Role): any => {
+  const base = {
+    pages: {
+      dashboard: false,
+      inventory: false,
+      sales: false,
+      calendar: false,
+      customers: false,
+      suppliers: false,
+      reports: false,
+      settings: false,
+    },
+    buttons: {
+      inventory: {
+        addProduct: false,
+        editProduct: false,
+        deleteProduct: false,
+        addBatch: false,
+        editBatch: false,
+        deleteBatch: false,
+        exportExcel: false,
+      },
+      sales: {
+        createInvoice: false,
+        cancelInvoice: false,
+        viewProfit: false,
+      },
+      customers: {
+        addCustomer: false,
+        editCustomer: false,
+        deleteCustomer: false,
+        manageReps: false,
+        manageDeliveries: false,
+      },
+      suppliers: {
+        addSupplier: false,
+        editSupplier: false,
+        deleteSupplier: false,
+        manageOrders: false,
+        managePayments: false,
+      },
+      settings: {
+        editCompany: false,
+        manageUsers: false,
+        viewActivities: false,
+        managePermissions: false,
+      },
+    },
+  };
+
+  if (role === 'ADMIN') {
+    // ADMIN has ALL permissions
+    const grantAll = (obj: any) => {
+      for (const k in obj) {
+        if (typeof obj[k] === 'object') {
+          grantAll(obj[k]);
+        } else if (typeof obj[k] === 'boolean') {
+          obj[k] = true;
+        }
+      }
+    };
+    grantAll(base);
+  } else if (role === 'SALES') {
+    base.pages.dashboard = true;
+    base.pages.sales = true;
+    base.pages.calendar = true;
+    base.pages.customers = true;
+    base.buttons.sales.createInvoice = true;
+    base.buttons.customers.addCustomer = true;
+    base.buttons.customers.editCustomer = true;
+    base.buttons.customers.manageDeliveries = true;
+  } else if (role === 'WAREHOUSE') {
+    base.pages.dashboard = true;
+    base.pages.inventory = true;
+    base.pages.calendar = true;
+    base.pages.suppliers = true;
+    base.buttons.inventory.addProduct = true;
+    base.buttons.inventory.editProduct = true;
+    base.buttons.inventory.addBatch = true;
+    base.buttons.inventory.editBatch = true;
+    base.buttons.inventory.exportExcel = true;
+    base.buttons.customers.manageDeliveries = true;
+    base.buttons.suppliers.manageOrders = true;
+  } else if (role === 'ACCOUNTANT') {
+    base.pages.dashboard = true;
+    base.pages.sales = true;
+    base.pages.calendar = true;
+    base.pages.customers = true;
+    base.pages.suppliers = true;
+    base.pages.reports = true;
+    base.buttons.sales.viewProfit = true;
+    base.buttons.suppliers.managePayments = true;
+  }
+
+  return base;
+};
+
+// Check if user has permission
+export const hasPermission = (
+  user: User | null,
+  type: 'page' | 'button',
+  section: string,
+  action?: string
+): boolean => {
+  if (!user) return false;
+  
+  // ADMIN role always bypasses all checks
+  if (user.role === 'ADMIN') return true;
+
+  const permissions = user.permissions || getDefaultPermissions(user.role);
+
+  if (type === 'page') {
+    return !!permissions.pages?.[section];
+  }
+
+  if (type === 'button' && action) {
+    return !!permissions.buttons?.[section]?.[action];
+  }
+
+  return false;
+};

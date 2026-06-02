@@ -65,7 +65,8 @@ interface SupplierState {
   // Supplier CRUD
   setSuppliers: (suppliers: Supplier[]) => void;
   addSupplier: (supplier: Omit<Supplier, 'id' | 'createdAt'>) => Promise<Supplier>;
-  updateSupplier: (id: string, data: Partial<Supplier>) => void;
+  updateSupplier: (id: string, data: Partial<Supplier>) => Promise<Supplier>;
+  deleteSupplier: (id: string) => Promise<void>;
 
   // Purchase Orders
   setPurchaseOrders: (orders: PurchaseOrder[]) => void;
@@ -108,11 +109,21 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
     return data;
   },
 
-  updateSupplier: (id, data) => {
+  updateSupplier: async (id, data) => {
+    const response = await apiClient.put<Supplier>(`/suppliers/${id}`, data);
     set((state) => ({
       suppliers: state.suppliers.map((s) =>
-        s.id === id ? { ...s, ...data } : s
+        s.id === id ? response.data : s
       ),
+    }));
+    get().saveLocalCache();
+    return response.data;
+  },
+
+  deleteSupplier: async (id) => {
+    await apiClient.delete(`/suppliers/${id}`);
+    set((state) => ({
+      suppliers: state.suppliers.filter((s) => s.id !== id),
     }));
     get().saveLocalCache();
   },
