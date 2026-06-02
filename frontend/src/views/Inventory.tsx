@@ -53,7 +53,7 @@ const COMMON_MEDICINES_DICTIONARY = [
 ];
 
 export default function Inventory() {
-  const { products, batches, addProduct, addBatch, addBatchQty } = useInventoryStore();
+  const { products, batches, pendingPurchaseOrders, fetchPendingPurchaseOrders, receivePurchaseOrder, addProduct, addBatch, addBatchQty } = useInventoryStore();
   const { user } = useAuthStore();
   const { suppliers, fetchSuppliers } = useSupplierStore();
 
@@ -61,7 +61,8 @@ export default function Inventory() {
     if (suppliers.length === 0) {
       fetchSuppliers();
     }
-  }, [suppliers.length, fetchSuppliers]);
+    fetchPendingPurchaseOrders();
+  }, [suppliers.length, fetchSuppliers, fetchPendingPurchaseOrders]);
   const [search, setSearch] = useState('');
   
   // Detail Modals State
@@ -83,6 +84,11 @@ export default function Inventory() {
   // Modals visibility
   const [showProductModal, setShowProductModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
+  
+  // PO Receive State
+  const [selectedPO, setSelectedPO] = useState<any>(null);
+  const [receiveItemsForm, setReceiveItemsForm] = useState<any[]>([]);
 
   // Form states
   const [newProduct, setNewProduct] = useState({
@@ -185,6 +191,24 @@ export default function Inventory() {
     }
   };
 
+  const handleReceivePO = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPO) return;
+    try {
+      await receivePurchaseOrder(selectedPO.id, receiveItemsForm);
+      useActivityStore.getState().logActivity(
+        'استلام أمر شراء',
+        `تم استلام طلبية من المورد ${selectedPO.supplier?.name} بناءً على أمر الشراء رقم ${selectedPO.orderNumber}`
+      );
+      setShowReceiveModal(false);
+      setSelectedPO(null);
+      alert('تم اعتماد الاستلام وإضافة المخزون بنجاح');
+    } catch (err) {
+      console.error(err);
+      alert('فشل في استلام أمر الشراء');
+    }
+  };
+
   return (
     <div className="space-y-6 pb-20 lg:pb-0" dir="rtl">
       <div className="space-y-6 animate-fade-in-slide">
@@ -245,6 +269,47 @@ export default function Inventory() {
           <span>تاريخ اليوم: <strong>{new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
         </div>
       </div>
+
+      {/* Pending Purchase Orders Section */}
+      {pendingPurchaseOrders.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-bold font-display text-amber-500 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            <span>أوامر شراء قيد الاستلام ({pendingPurchaseOrders.length})</span>
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pendingPurchaseOrders.map((po) => (
+              <div 
+                key={po.id} 
+                onClick={() => {
+                  setSelectedPO(po);
+                  setReceiveItemsForm(po.items.map(item => ({
+                    purchaseItemId: item.id,
+                    productId: item.productId,
+                    productName: item.product?.name,
+                    qty: item.qty, // default to requested qty
+                    unitCost: item.unitCost,
+                    batchNumber: generateBatchNumber(), // auto-generate a suggestion
+                    expiryDate: '',
+                    manufactureDate: ''
+                  })));
+                  setShowReceiveModal(true);
+                }}
+                className="glass-card p-4 rounded-2xl space-y-3 border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer bg-gradient-to-br from-amber-500/5 to-transparent relative overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-amber-500" />
+                <div className="flex justify-between items-start">
+                  <span className="font-bold text-[var(--text-primary)]">{po.supplier?.name}</span>
+                  <span className="text-xs bg-amber-500/20 text-amber-600 px-2 py-0.5 rounded-full font-mono">{po.orderNumber}</span>
+                </div>
+                <div className="text-xs text-[var(--text-secondary)]">
+                  يحتوي على {po.items.length} أصناف جاهزة للاستلام والإضافة للمخزون.
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="glass-card flex items-center gap-3 px-4 py-3 rounded-2xl">
@@ -881,6 +946,100 @@ export default function Inventory() {
           </div>
         </div>
       )}
+    {/* Modal 3: Receive PO */}
+    {showReceiveModal && selectedPO && (
+      <div className="modal-overlay">
+        <div className="modal-content-card max-w-3xl" dir="rtl">
+          <div className="modal-glow-back" />
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+              <Layers className="w-5 h-5 text-teal-500" />
+              <span>استلام مخزون - أمر الشراء {selectedPO.orderNumber}</span>
+            </h3>
+            <button onClick={() => setShowReceiveModal(false)} className="text-[var(--text-secondary)] hover:text-rose-500">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <form onSubmit={handleReceivePO} className="space-y-4">
+            <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl p-4 max-h-[60vh] overflow-y-auto space-y-6">
+              {receiveItemsForm.map((item, index) => (
+                <div key={item.purchaseItemId} className="p-4 bg-[var(--bg-primary)] border border-[var(--glass-border)] rounded-lg space-y-3 shadow-sm">
+                  <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-2 mb-2">
+                    <span className="font-bold text-teal-600 dark:text-teal-400">{item.productName}</span>
+                    <span className="text-xs text-[var(--text-secondary)]">الكمية المطلوبة: {selectedPO.items.find((i: any) => i.id === item.purchaseItemId)?.qty}</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-xs text-[var(--text-secondary)]">الكمية المستلمة الفعليا (Qty)</label>
+                      <input 
+                        type="number" required min="1"
+                        value={item.qty}
+                        onChange={(e) => {
+                          const newForm = [...receiveItemsForm];
+                          newForm[index].qty = Number(e.target.value);
+                          setReceiveItemsForm(newForm);
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs text-[var(--text-secondary)]">رقم التشغيلة (Batch No)</label>
+                      <input 
+                        type="text" required
+                        value={item.batchNumber}
+                        onChange={(e) => {
+                          const newForm = [...receiveItemsForm];
+                          newForm[index].batchNumber = e.target.value;
+                          setReceiveItemsForm(newForm);
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none text-sm font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs text-[var(--text-secondary)]">تاريخ الإنتاج (اختياري)</label>
+                      <DatePicker 
+                        value={item.manufactureDate}
+                        onChange={(val) => {
+                          const newForm = [...receiveItemsForm];
+                          newForm[index].manufactureDate = val;
+                          setReceiveItemsForm(newForm);
+                        }}
+                        placeholder="اختر تاريخ الإنتاج"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs text-[var(--text-secondary)]">تاريخ الانتهاء (إلزامي)</label>
+                      <DatePicker 
+                        value={item.expiryDate}
+                        onChange={(val) => {
+                          const newForm = [...receiveItemsForm];
+                          newForm[index].expiryDate = val;
+                          setReceiveItemsForm(newForm);
+                        }}
+                        placeholder="اختر تاريخ الانتهاء"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button 
+                type="submit"
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium cursor-pointer"
+              >
+                تأكيد واعتماد دخول المخزون
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+
     </div>
   );
 }

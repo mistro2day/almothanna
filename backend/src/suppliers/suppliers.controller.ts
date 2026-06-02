@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { SuppliersService } from './suppliers.service';
 
 @Controller('suppliers')
@@ -23,6 +23,14 @@ export class SuppliersController {
   @Post('purchase-orders')
   async createPurchaseOrder(@Body() dto: any) {
     return this.suppliersService.createPurchaseOrder(dto);
+  }
+
+  @Post('purchase-orders/:id/receive')
+  async receivePurchaseOrder(
+    @Param('id') id: string,
+    @Body() dto: { items: any[] },
+  ) {
+    return this.suppliersService.receivePurchaseOrder(id, dto.items);
   }
 
   @Get('payments')

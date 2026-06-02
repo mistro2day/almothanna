@@ -27,9 +27,21 @@ export interface Batch {
   productName?: string; // hydrated product name for easy FE list display
 }
 
+export interface PurchaseOrder {
+  id: string;
+  orderNumber: string;
+  supplierId: string;
+  status: string;
+  total: number;
+  items: any[];
+  supplier?: any;
+  createdAt: string;
+}
+
 interface InventoryState {
   products: Product[];
   batches: Batch[];
+  pendingPurchaseOrders: PurchaseOrder[];
   loading: boolean;
   setProducts: (products: Product[]) => void;
   setBatches: (batches: Batch[]) => void;
@@ -42,15 +54,18 @@ interface InventoryState {
   saveLocalCache: () => void;
   fetchProducts: () => Promise<void>;
   fetchBatches: () => Promise<void>;
+  fetchPendingPurchaseOrders: () => Promise<void>;
   addProduct: (prod: Omit<Product, 'id'>) => Promise<Product>;
   addBatch: (batch: Omit<Batch, 'id'>) => Promise<Batch>;
   addBatchQty: (batchId: string, qty: number) => Promise<void>;
+  receivePurchaseOrder: (id: string, items: any[]) => Promise<void>;
 }
 
 export const useInventoryStore = create<InventoryState>((set, get) => {
   return {
     products: [],
     batches: [],
+    pendingPurchaseOrders: [],
     loading: false,
 
     setProducts: (products) => {
@@ -196,6 +211,22 @@ export const useInventoryStore = create<InventoryState>((set, get) => {
         ),
       }));
       get().saveLocalCache();
+    },
+
+    fetchPendingPurchaseOrders: async () => {
+      try {
+        const { data } = await apiClient.get<PurchaseOrder[]>('/suppliers/purchase-orders');
+        const pending = data.filter(po => po.status === 'CONFIRMED' || po.status === 'PARTIAL');
+        set({ pendingPurchaseOrders: pending });
+      } catch (err) {
+        console.error('Failed to fetch pending purchase orders:', err);
+      }
+    },
+
+    receivePurchaseOrder: async (id, items) => {
+      await apiClient.post(`/suppliers/purchase-orders/${id}/receive`, { items });
+      await get().fetchPendingPurchaseOrders();
+      await get().fetchBatches();
     },
   };
 });

@@ -104,4 +104,48 @@ export class SuppliersService {
       },
     });
   }
+
+  async receivePurchaseOrder(id: string, items: any[]) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.purchaseOrder.findUnique({ where: { id } });
+      if (!order) throw new Error('Purchase Order not found');
+
+      for (const item of items) {
+        // Create a new batch
+        const batch = await tx.batch.create({
+          data: {
+            batchNumber: item.batchNumber,
+            productId: item.productId,
+            supplierId: order.supplierId,
+            qty: item.qty,
+            costPrice: item.unitCost,
+            expiryDate: new Date(item.expiryDate),
+            manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : new Date(),
+          },
+        });
+
+        // Add stock movement
+        await tx.stockMovement.create({
+          data: {
+            batchId: batch.id,
+            type: 'IN',
+            qty: item.qty,
+            reason: 'Purchase Receipt',
+          },
+        });
+
+        // Update purchase item with received batch info
+        await tx.purchaseItem.update({
+          where: { id: item.purchaseItemId },
+          data: { batchNumber: item.batchNumber, qty: item.qty },
+        });
+      }
+
+      // Update PO status to RECEIVED (or you can calculate if it's partial)
+      return tx.purchaseOrder.update({
+        where: { id },
+        data: { status: 'RECEIVED', receivedDate: new Date() },
+      });
+    });
+  }
 }

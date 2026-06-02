@@ -85,6 +85,9 @@ export default function Suppliers() {
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [detailTab, setDetailTab] = useState<'info' | 'purchases' | 'payments'>('info');
+  const [isSubmittingPO, setIsSubmittingPO] = useState(false);
+  const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   // Add supplier form
   const [newSupplier, setNewSupplier] = useState({
@@ -155,8 +158,9 @@ export default function Suppliers() {
   // Handlers
   const handleAddSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSupplier.name || !newSupplier.phone) return;
+    if (!newSupplier.name || !newSupplier.phone || isSubmittingSupplier) return;
 
+    setIsSubmittingSupplier(true);
     try {
       await addSupplier({
         name: newSupplier.name,
@@ -190,18 +194,21 @@ export default function Suppliers() {
     } catch (err) {
       console.error(err);
       alert('فشل في إضافة المورد');
+    } finally {
+      setIsSubmittingSupplier(false);
     }
   };
 
   const handleAddPO = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!showDetailView || newPO.items.length === 0) return;
+    if (!showDetailView || newPO.items.length === 0 || isSubmittingPO) return;
 
     const validItems = newPO.items.filter((i) => i.productId && i.qty > 0 && i.unitCost > 0);
     if (validItems.length === 0) return;
 
     const total = validItems.reduce((sum, i) => sum + i.qty * i.unitCost, 0);
 
+    setIsSubmittingPO(true);
     try {
       await addPurchaseOrder({
         supplierId: showDetailView,
@@ -224,13 +231,16 @@ export default function Suppliers() {
     } catch (err) {
       console.error(err);
       alert('فشل في إنشاء أمر الشراء');
+    } finally {
+      setIsSubmittingPO(false);
     }
   };
 
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!showDetailView || newPayment.amount <= 0) return;
+    if (!showDetailView || newPayment.amount <= 0 || isSubmittingPayment) return;
 
+    setIsSubmittingPayment(true);
     try {
       await addPayment({
         supplierId: showDetailView,
@@ -248,6 +258,8 @@ export default function Suppliers() {
     } catch (err) {
       console.error(err);
       alert('فشل في تسجيل الدفعة');
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -632,7 +644,13 @@ export default function Suppliers() {
                 </div>
 
                 <div className="flex justify-start gap-3 pt-2">
-                  <button type="submit" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium cursor-pointer text-sm">تأكيد أمر الشراء</button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingPO}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-xl font-medium cursor-pointer text-sm"
+                  >
+                    {isSubmittingPO ? 'جاري تأكيد أمر الشراء...' : 'تأكيد أمر الشراء'}
+                  </button>
                   <button type="button" onClick={() => setShowPurchaseModal(false)} className="px-5 py-2.5 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl font-medium cursor-pointer text-sm">إلغاء</button>
                 </div>
               </form>
@@ -708,7 +726,13 @@ export default function Suppliers() {
                 </div>
 
                 <div className="flex justify-start gap-3 pt-2">
-                  <button type="submit" className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium cursor-pointer">تسجيل الدفعة</button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingPayment}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed text-white rounded-xl font-medium cursor-pointer"
+                  >
+                    {isSubmittingPayment ? 'جاري تسجيل الدفعة...' : 'تسجيل الدفعة'}
+                  </button>
                   <button type="button" onClick={() => setShowPaymentModal(false)} className="px-5 py-2.5 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl font-medium cursor-pointer">إلغاء</button>
                 </div>
               </form>
@@ -1103,7 +1127,13 @@ export default function Suppliers() {
               </div>
 
               <div className="flex justify-start gap-3 pt-3">
-                <button type="submit" className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium cursor-pointer">تسجيل المورد</button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingSupplier}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed text-white rounded-xl font-medium cursor-pointer"
+                >
+                  {isSubmittingSupplier ? 'جاري تسجيل المورد...' : 'تسجيل المورد'}
+                </button>
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-5 py-2.5 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl font-medium cursor-pointer">إلغاء</button>
               </div>
             </form>
