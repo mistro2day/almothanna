@@ -41,6 +41,8 @@ model Product {
   batches        Batch[]
   saleItems      SaleItem[]
   purchaseItems  PurchaseItem[]
+  supplierId     String?
+  supplier       Supplier?      @relation("SupplierProducts", fields: [supplierId], references: [id], onDelete: SetNull)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 }
@@ -222,6 +224,7 @@ model Supplier {
   purchaseOrders  PurchaseOrder[]
   payments        SupplierPayment[]
   batches         Batch[]          @relation("SupplierBatches")
+  products        Product[]        @relation("SupplierProducts")
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 }

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useInventoryStore, Product, Batch } from '../store/useInventoryStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useActivityStore } from '../store/useActivityStore';
+import { useSupplierStore } from '../store/useSupplierStore';
 import { 
   Search, 
   Plus, 
@@ -54,6 +55,13 @@ const COMMON_MEDICINES_DICTIONARY = [
 export default function Inventory() {
   const { products, batches, addProduct, addBatch, addBatchQty } = useInventoryStore();
   const { user } = useAuthStore();
+  const { suppliers, fetchSuppliers } = useSupplierStore();
+
+  useEffect(() => {
+    if (suppliers.length === 0) {
+      fetchSuppliers();
+    }
+  }, [suppliers.length, fetchSuppliers]);
   const [search, setSearch] = useState('');
   
   // Detail Modals State
@@ -82,7 +90,8 @@ export default function Inventory() {
     scientificName: '',
     barcode: '',
     category: '',
-    unit: 'Box'
+    unit: 'Box',
+    supplierId: ''
   });
 
   const [newBatch, setNewBatch] = useState({
@@ -112,12 +121,15 @@ export default function Inventory() {
     if (!newProduct.name || !newProduct.unit) return;
     
     try {
-      await addProduct(newProduct);
+      await addProduct({
+        ...newProduct,
+        supplierId: newProduct.supplierId || undefined
+      });
       useActivityStore.getState().logActivity(
         'إضافة منتج جديد',
         `تم إضافة المنتج الدوائي ${newProduct.name} (الاسم العلمي: ${newProduct.scientificName || '---'}) للفئة ${newProduct.category || 'عام'}`
       );
-      setNewProduct({ name: '', scientificName: '', barcode: '', category: '', unit: 'Box' });
+      setNewProduct({ name: '', scientificName: '', barcode: '', category: '', unit: 'Box', supplierId: '' });
       setShowProductModal(false);
     } catch (err) {
       console.error(err);
@@ -275,6 +287,9 @@ export default function Inventory() {
                         <span className="text-xs text-[var(--text-secondary)] font-mono">{p.barcode}</span>
                       </div>
                       <h3 className="text-base font-bold text-[var(--text-primary)] mt-2">{p.name}</h3>
+                      {p.supplier?.name && (
+                        <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold mt-1">🏢 {p.supplier.name}</p>
+                      )}
                       {p.scientificName && (
                         <p className="text-xs text-[var(--text-secondary)] italic mt-1">{p.scientificName}</p>
                       )}
@@ -440,7 +455,8 @@ export default function Inventory() {
                             scientificName: med.scientificName,
                             category: med.category,
                             unit: med.unit,
-                            barcode: newProduct.barcode
+                            barcode: newProduct.barcode,
+                            supplierId: newProduct.supplierId
                           });
                           setShowProductSuggestions(false);
                         }}
@@ -549,6 +565,20 @@ export default function Inventory() {
                   placeholder="مثال: Antibiotic, Analgesic"
                   className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-emerald-500"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[var(--text-secondary)] font-medium">الشركة المصنعة / المورد</label>
+                <select 
+                  value={newProduct.supplierId}
+                  onChange={(e) => setNewProduct({ ...newProduct, supplierId: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-emerald-500"
+                >
+                  <option value="">اختر المورد/الشركة (اختياري)</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} {s.companyName ? `(${s.companyName})` : ''}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex justify-start gap-3 pt-3">
@@ -738,6 +768,7 @@ export default function Inventory() {
               <div>الاسم العلمي: <strong className="text-[var(--text-primary)]">{selectedProduct.scientificName || '---'}</strong></div>
               <div>الباركود: <strong className="text-[var(--text-primary)] font-mono">{selectedProduct.barcode || '---'}</strong></div>
               <div>الوحدة: <strong className="text-[var(--text-primary)]">{selectedProduct.unit}</strong></div>
+              <div>الشركة / المورد: <strong className="text-teal-600 dark:text-teal-400 font-bold">🏢 {selectedProduct.supplier?.name || '---'}</strong></div>
               <div>إجمالي الكمية المتوفرة: <strong className="text-emerald-500 font-bold">{batches.filter(b => b.productId === selectedProduct.id).reduce((sum, b) => sum + b.qty, 0)} قطعة</strong></div>
             </div>
 

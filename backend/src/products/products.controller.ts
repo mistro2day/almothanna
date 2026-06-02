@@ -24,6 +24,7 @@ export class ProductsController {
       barcode?: string;
       category?: string;
       unit: string;
+      supplierId?: string;
     },
   ) {
     return this.productsService.create(dto);

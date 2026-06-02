@@ -8,6 +8,12 @@ export interface Product {
   barcode?: string;
   category?: string;
   unit: string;
+  supplierId?: string;
+  supplier?: {
+    id: string;
+    name: string;
+    companyName?: string;
+  };
 }
 
 export interface Batch {

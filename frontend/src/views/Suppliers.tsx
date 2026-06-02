@@ -111,6 +111,9 @@ export default function Suppliers() {
     notes: '',
   });
 
+  const [activePOItemSearchIdx, setActivePOItemSearchIdx] = useState<number | null>(null);
+  const [poItemSearchText, setPoItemSearchText] = useState('');
+
   // Payment form
   const [newPayment, setNewPayment] = useState({
     amount: 0,
@@ -534,18 +537,48 @@ export default function Suppliers() {
 
                   {newPO.items.map((item, idx) => (
                     <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)]">
-                      <div className="col-span-5 space-y-1">
+                      <div className="col-span-5 space-y-1 relative">
                         <label className="block text-[10px] text-[var(--text-secondary)]">المنتج</label>
-                        <select
-                          value={item.productId}
-                          onChange={(e) => updatePOItem(idx, 'productId', e.target.value)}
+                        <input
+                          type="text"
+                          placeholder="ابحث عن المنتج..."
+                          value={activePOItemSearchIdx === idx ? poItemSearchText : (item.productName || '')}
+                          onFocus={() => {
+                            setActivePOItemSearchIdx(idx);
+                            setPoItemSearchText(item.productName || '');
+                          }}
+                          onChange={(e) => {
+                            setPoItemSearchText(e.target.value);
+                          }}
+                          onBlur={() => {
+                            // Slight delay to allow clicking suggestions before hiding
+                            setTimeout(() => {
+                              setActivePOItemSearchIdx(null);
+                            }, 200);
+                          }}
                           className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)] outline-none text-xs"
-                        >
-                          <option value="">اختر المنتج</option>
-                          {products.map((p) => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
+                        />
+                        {activePOItemSearchIdx === idx && (
+                          <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-[var(--border-color)]">
+                            {products
+                              .filter(p => p.name.toLowerCase().includes(poItemSearchText.toLowerCase()) || (p.scientificName && p.scientificName.toLowerCase().includes(poItemSearchText.toLowerCase())))
+                              .map((p) => (
+                                <div
+                                  key={p.id}
+                                  onMouseDown={() => {
+                                    updatePOItem(idx, 'productId', p.id);
+                                    setActivePOItemSearchIdx(null);
+                                  }}
+                                  className="p-2.5 hover:bg-[var(--border-color)]/30 cursor-pointer text-right transition-colors"
+                                >
+                                  <span className="font-bold text-xs text-[var(--text-primary)]">{p.name}</span>
+                                  {p.scientificName && (
+                                    <span className="block text-[10px] text-[var(--text-secondary)] italic mt-0.5">{p.scientificName}</span>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        )}
                       </div>
                       <div className="col-span-3 space-y-1">
                         <label className="block text-[10px] text-[var(--text-secondary)]">الكمية</label>

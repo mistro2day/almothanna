@@ -7,6 +7,7 @@ export class ProductsService {
 
   async findAll() {
     return this.prisma.product.findMany({
+      include: { supplier: true },
       orderBy: { name: 'asc' },
     });
   }
@@ -22,13 +23,15 @@ export class ProductsService {
           { barcode: { contains: trimmed } },
         ],
       },
+      include: { supplier: true },
       take: 10,
     });
   }
 
-  async create(data: { name: string; scientificName?: string; barcode?: string; category?: string; unit: string }) {
+  async create(data: { name: string; scientificName?: string; barcode?: string; category?: string; unit: string; supplierId?: string }) {
     return this.prisma.product.create({
       data,
+      include: { supplier: true },
     });
   }
 }

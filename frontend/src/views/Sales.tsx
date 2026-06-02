@@ -70,6 +70,7 @@ export default function Sales() {
   // Price List States
   const [showPriceListModal, setShowPriceListModal] = useState(false);
   const [priceListSearch, setPriceListSearch] = useState('');
+  const [groupBySupplier, setGroupBySupplier] = useState(false);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([
     'name',
     'price',
@@ -118,7 +119,8 @@ export default function Sales() {
             expiryDate: b.expiryDate,
             qty: b.qty,
             unit: prod?.unit || 'قطعة',
-            price: Math.round(b.costPrice * 1.25)
+            price: Math.round(b.costPrice * 1.25),
+            supplierName: prod?.supplier?.name || 'أدوية عامة / غير حددة'
           };
         })
         .filter(r => r.name.toLowerCase().includes(priceListSearch.toLowerCase()) || r.scientificName.toLowerCase().includes(priceListSearch.toLowerCase()));
@@ -138,7 +140,8 @@ export default function Sales() {
             expiryDate: '---',
             qty: totalQty,
             unit: p.unit,
-            price
+            price,
+            supplierName: p.supplier?.name || 'أدوية عامة / غير حددة'
           };
         })
         .filter(r => r.qty > 0)
@@ -214,18 +217,76 @@ export default function Sales() {
     const printWindow = window.open('', '_blank', 'width=900,height=700');
     if (!printWindow) return;
 
-    const headerCols = customColumns.map(col => `<th>${columnLabels[col] || col}</th>`).join('');
+    let tableContentHtml = '';
 
-    const rowsHtml = rows.map((r: any, idx) => {
-      const cols = customColumns.map(col => {
-        if (col === 'price') return `<td style="text-align: center; font-weight: bold; color: #10b981;">${r.price.toLocaleString('en-US')} ${currency}</td>`;
-        if (col === 'qty') return `<td style="text-align: center;">${r.qty} ${r.unit || ''}</td>`;
-        if (col === 'expiryDate') return `<td style="text-align: center; direction: ltr;">${r.expiryDate}</td>`;
-        if (col === 'batchNumber') return `<td style="text-align: center; font-weight: 500;">${r.batchNumber}</td>`;
-        return `<td style="text-align: right;">${r[col]}</td>`;
+    if (!groupBySupplier) {
+      const headerCols = customColumns.map(col => `<th>${columnLabels[col] || col}</th>`).join('');
+      const rowsHtml = rows.map((r: any, idx) => {
+        const cols = customColumns.map(col => {
+          if (col === 'price') return `<td style="text-align: center; font-weight: bold; color: #10b981;">${r.price.toLocaleString('en-US')} ${currency}</td>`;
+          if (col === 'qty') return `<td style="text-align: center;">${r.qty} ${r.unit || ''}</td>`;
+          if (col === 'expiryDate') return `<td style="text-align: center; direction: ltr;">${r.expiryDate}</td>`;
+          if (col === 'batchNumber') return `<td style="text-align: center; font-weight: 500;">${r.batchNumber}</td>`;
+          return `<td style="text-align: right;">${r[col]}</td>`;
+        }).join('');
+        return `<tr><td style="text-align: center; color: #64748b;">${idx + 1}</td>${cols}</tr>`;
       }).join('');
-      return `<tr><td style="text-align: center; color: #64748b;">${idx + 1}</td>${cols}</tr>`;
-    }).join('');
+
+      tableContentHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px;">#</th>
+              ${headerCols}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      `;
+    } else {
+      const groups: Record<string, typeof rows> = {};
+      rows.forEach(row => {
+        const sName = row.supplierName || 'أدوية عامة / غير محددة';
+        if (!groups[sName]) groups[sName] = [];
+        groups[sName].push(row);
+      });
+
+      const headerCols = customColumns.map(col => `<th>${columnLabels[col] || col}</th>`).join('');
+      let globalIdx = 0;
+
+      tableContentHtml = Object.entries(groups).map(([sName, items]) => {
+        const rowsHtml = items.map((r: any) => {
+          globalIdx++;
+          const cols = customColumns.map(col => {
+            if (col === 'price') return `<td style="text-align: center; font-weight: bold; color: #10b981;">${r.price.toLocaleString('en-US')} ${currency}</td>`;
+            if (col === 'qty') return `<td style="text-align: center;">${r.qty} ${r.unit || ''}</td>`;
+            if (col === 'expiryDate') return `<td style="text-align: center; direction: ltr;">${r.expiryDate}</td>`;
+            if (col === 'batchNumber') return `<td style="text-align: center; font-weight: 500;">${r.batchNumber}</td>`;
+            return `<td style="text-align: right;">${r[col]}</td>`;
+          }).join('');
+          return `<tr><td style="text-align: center; color: #64748b;">${globalIdx}</td>${cols}</tr>`;
+        }).join('');
+
+        return `
+          <div class="supplier-group-header" style="background-color: #f1f5f9; border-right: 4px solid #10b981; padding: 8px 12px; margin-top: 20px; margin-bottom: 10px; font-weight: bold; color: #0f172a; font-size: 14px; border-radius: 6px;">
+            🏢 ${sName} (${items.length} صنفاً)
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                ${headerCols}
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        `;
+      }).join('');
+    }
 
     printWindow.document.write(`
 <!DOCTYPE html>
@@ -284,17 +345,7 @@ export default function Sales() {
     <div><span>الجهة:</span> <strong>لائحة أسعار معلنة</strong></div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 40px;">#</th>
-        ${headerCols}
-      </tr>
-    </thead>
-    <tbody>
-      ${rowsHtml}
-    </tbody>
-  </table>
+  ${tableContentHtml}
 
   <div class="footer">
     <div><p>${footerText}</p><p>تم إنشاء هذه القائمة إلكترونياً وهي صالحة حتى تحديثها التالي.</p></div>
@@ -343,24 +394,93 @@ export default function Sales() {
       price: 'سعر البيع المقترح'
     };
 
-    const headerCols = customColumns.map(col => `<th style="background-color: #10b981; color: #ffffff; font-weight: bold; border: 1px solid #dddddd; padding: 10px; text-align: center;">${columnLabels[col] || col}</th>`).join('');
+    let tableContentHtml = '';
 
-    const rowsHtml = rows.map((r: any, idx) => {
-      const cols = customColumns.map(col => {
-        if (col === 'price') {
-          return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center; font-weight: bold; color: #10b981;">${r.price} ${currency}</td>`;
-        }
-        if (col === 'qty') {
-          return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center;">${r.qty} ${r.unit || ''}</td>`;
-        }
-        if (col === 'expiryDate' || col === 'batchNumber') {
-          return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center;">${r[col]}</td>`;
-        }
-        return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: right;">${r[col]}</td>`;
+    if (!groupBySupplier) {
+      const headerCols = customColumns.map(col => `<th style="background-color: #10b981; color: #ffffff; font-weight: bold; border: 1px solid #dddddd; padding: 10px; text-align: center;">${columnLabels[col] || col}</th>`).join('');
+      const rowsHtml = rows.map((r: any, idx) => {
+        const cols = customColumns.map(col => {
+          if (col === 'price') {
+            return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center; font-weight: bold; color: #10b981;">${r.price} ${currency}</td>`;
+          }
+          if (col === 'qty') {
+            return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center;">${r.qty} ${r.unit || ''}</td>`;
+          }
+          if (col === 'expiryDate' || col === 'batchNumber') {
+            return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center;">${r[col]}</td>`;
+          }
+          return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: right;">${r[col]}</td>`;
+        }).join('');
+        return `<tr><td style="border: 1px solid #dddddd; padding: 8px; text-align: center; color: #666666;">${idx + 1}</td>${cols}</tr>`;
       }).join('');
-      
-      return `<tr><td style="border: 1px solid #dddddd; padding: 8px; text-align: center; color: #666666;">${idx + 1}</td>${cols}</tr>`;
-    }).join('');
+
+      tableContentHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th style="background-color: #10b981; color: #ffffff; font-weight: bold; border: 1px solid #dddddd; padding: 10px; text-align: center;">#</th>
+              ${headerCols}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      `;
+    } else {
+      const groups: Record<string, typeof rows> = {};
+      rows.forEach(row => {
+        const sName = row.supplierName || 'أدوية عامة / غير محددة';
+        if (!groups[sName]) groups[sName] = [];
+        groups[sName].push(row);
+      });
+
+      const headerCols = customColumns.map(col => `<th style="background-color: #10b981; color: #ffffff; font-weight: bold; border: 1px solid #dddddd; padding: 10px; text-align: center;">${columnLabels[col] || col}</th>`).join('');
+      let globalIdx = 0;
+
+      const groupsHtml = Object.entries(groups).map(([sName, items]) => {
+        const rowsHtml = items.map((r: any) => {
+          globalIdx++;
+          const cols = customColumns.map(col => {
+            if (col === 'price') {
+              return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center; font-weight: bold; color: #10b981;">${r.price} ${currency}</td>`;
+            }
+            if (col === 'qty') {
+              return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center;">${r.qty} ${r.unit || ''}</td>`;
+            }
+            if (col === 'expiryDate' || col === 'batchNumber') {
+              return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: center;">${r[col]}</td>`;
+            }
+            return `<td style="border: 1px solid #dddddd; padding: 8px; text-align: right;">${r[col]}</td>`;
+          }).join('');
+          return `<tr><td style="border: 1px solid #dddddd; padding: 8px; text-align: center; color: #666666;">${globalIdx}</td>${cols}</tr>`;
+        }).join('');
+
+        const totalCols = customColumns.length + 1;
+
+        return `
+          <tr>
+            <td colspan="${totalCols}" style="background-color: #f1f5f9; color: #0f172a; font-weight: bold; text-align: right; padding: 12px; border: 1px solid #cbd5e1; font-size: 14px;">
+              🏢 ${sName} (${items.length} صنفاً)
+            </td>
+          </tr>
+          <tr>
+            <th style="background-color: #10b981; color: #ffffff; font-weight: bold; border: 1px solid #dddddd; padding: 10px; text-align: center;">#</th>
+            ${headerCols}
+          </tr>
+          ${rowsHtml}
+          <tr><td colspan="${totalCols}" style="height: 15px; border: none;"></td></tr>
+        `;
+      }).join('');
+
+      tableContentHtml = `
+        <table>
+          <tbody>
+            ${groupsHtml}
+          </tbody>
+        </table>
+      `;
+    }
 
     const excelTemplate = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -389,17 +509,7 @@ export default function Sales() {
       <body>
         <h2 style="color: #065f46; text-align: center; margin-bottom: 5px;">${companyName}</h2>
         <h3 style="color: #10b981; text-align: center; margin-bottom: 20px;">قائمة الأسعار المعتمدة - تاريخ التصدير: ${new Date().toLocaleDateString('ar-SA')}</h3>
-        <table>
-          <thead>
-            <tr>
-              <th style="background-color: #10b981; color: #ffffff; font-weight: bold; border: 1px solid #dddddd; padding: 10px; text-align: center;">#</th>
-              ${headerCols}
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
+        ${tableContentHtml}
       </body>
       </html>
     `;
@@ -3491,9 +3601,23 @@ export default function Sales() {
                     </div>
                   </div>
 
+                  {/* Price List Grouping Option */}
+                  <div className="bg-[var(--bg-primary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                    <h4 className="text-sm font-bold text-[var(--text-primary)] mb-2.5">2. خيارات الترتيب والفرز</h4>
+                    <label className="flex items-center gap-3 cursor-pointer p-1">
+                      <input 
+                        type="checkbox" 
+                        checked={groupBySupplier} 
+                        onChange={(e) => setGroupBySupplier(e.target.checked)}
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" 
+                      />
+                      <span className="text-sm font-bold text-[var(--text-primary)]">فرز وتجميع حسب الشركة المصنعة</span>
+                    </label>
+                  </div>
+
                   {/* Instant Action buttons */}
                   <div>
-                    <h4 className="text-sm font-bold text-[var(--text-primary)] mb-3">2. تصدير وتحميل القائمة</h4>
+                    <h4 className="text-sm font-bold text-[var(--text-primary)] mb-3">3. تصدير وتحميل القائمة</h4>
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => exportPriceListPDF()}
@@ -3548,35 +3672,89 @@ export default function Sales() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)] text-xs">
-                          {getPriceListRows().length === 0 ? (
-                            <tr>
-                              <td colSpan={10} className="p-8 text-center text-[var(--text-secondary)]">لا توجد أدوية متوفرة تطابق خيارات البحث</td>
-                            </tr>
-                          ) : (
-                            getPriceListRows().slice(0, 15).map((row: any, idx) => (
-                              <tr key={row.id} className="hover:bg-[var(--border-color)]/20 text-[var(--text-primary)]">
-                                <td className="p-3 text-center text-[var(--text-secondary)]">{idx + 1}</td>
-                                <td className="p-3 font-semibold">{row.name}</td>
-                                {activeCols.map(col => {
-                                  if (col === 'name') return null;
-                                  if (col === 'price') {
+                          {(() => {
+                            const rawRows = getPriceListRows();
+                            if (rawRows.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={10} className="p-8 text-center text-[var(--text-secondary)]">لا توجد أدوية متوفرة تطابق خيارات البحث</td>
+                                </tr>
+                              );
+                            }
+
+                            if (!groupBySupplier) {
+                              return rawRows.slice(0, 25).map((row: any, idx) => (
+                                <tr key={row.id} className="hover:bg-[var(--border-color)]/20 text-[var(--text-primary)]">
+                                  <td className="p-3 text-center text-[var(--text-secondary)]">{idx + 1}</td>
+                                  <td className="p-3 font-semibold">{row.name}</td>
+                                  {activeCols.map(col => {
+                                    if (col === 'name') return null;
+                                    if (col === 'price') {
+                                      return (
+                                        <td key={col} className="p-3 text-center font-bold text-emerald-500">
+                                          {row.price.toLocaleString('en-US')} {settings?.currency || 'SDG'}
+                                        </td>
+                                      );
+                                    }
+                                    if (col === 'qty') {
+                                      return <td key={col} className="p-3 text-center">{row.qty} {row.unit}</td>;
+                                    }
+                                    if (col === 'expiryDate' || col === 'batchNumber') {
+                                      return <td key={col} className="p-3 text-center font-mono">{row[col]}</td>;
+                                    }
+                                    return <td key={col} className="p-3 text-center">{row[col]}</td>;
+                                  })}
+                                </tr>
+                              ));
+                            }
+
+                            // Grouped rendering
+                            const groups: Record<string, typeof rawRows> = {};
+                            rawRows.forEach(row => {
+                              const sName = row.supplierName || 'أدوية عامة / غير محددة';
+                              if (!groups[sName]) groups[sName] = [];
+                              groups[sName].push(row);
+                            });
+
+                            let globalIdx = 0;
+                            return Object.entries(groups).map(([sName, items]) => {
+                              return (
+                                <React.Fragment key={sName}>
+                                  <tr className="bg-teal-500/5 border-y border-teal-500/10">
+                                    <td colSpan={activeCols.length + 1} className="p-3 font-bold text-teal-600 dark:text-teal-400 text-xs text-right">
+                                      🏢 {sName} ({items.length} صنفاً)
+                                    </td>
+                                  </tr>
+                                  {items.map((row: any) => {
+                                    globalIdx++;
                                     return (
-                                      <td key={col} className="p-3 text-center font-bold text-emerald-500">
-                                        {row.price.toLocaleString('en-US')} {settings?.currency || 'SDG'}
-                                      </td>
+                                      <tr key={row.id} className="hover:bg-[var(--border-color)]/20 text-[var(--text-primary)]">
+                                        <td className="p-3 text-center text-[var(--text-secondary)]">{globalIdx}</td>
+                                        <td className="p-3 font-semibold">{row.name}</td>
+                                        {activeCols.map(col => {
+                                          if (col === 'name') return null;
+                                          if (col === 'price') {
+                                            return (
+                                              <td key={col} className="p-3 text-center font-bold text-emerald-500">
+                                                {row.price.toLocaleString('en-US')} {settings?.currency || 'SDG'}
+                                              </td>
+                                            );
+                                          }
+                                          if (col === 'qty') {
+                                            return <td key={col} className="p-3 text-center">{row.qty} {row.unit}</td>;
+                                          }
+                                          if (col === 'expiryDate' || col === 'batchNumber') {
+                                            return <td key={col} className="p-3 text-center font-mono">{row[col]}</td>;
+                                          }
+                                          return <td key={col} className="p-3 text-center">{row[col]}</td>;
+                                        })}
+                                      </tr>
                                     );
-                                  }
-                                  if (col === 'qty') {
-                                    return <td key={col} className="p-3 text-center">{row.qty} {row.unit}</td>;
-                                  }
-                                  if (col === 'expiryDate' || col === 'batchNumber') {
-                                    return <td key={col} className="p-3 text-center font-mono">{row[col]}</td>;
-                                  }
-                                  return <td key={col} className="p-3 text-center">{row[col]}</td>;
-                                })}
-                              </tr>
-                            ))
-                          )}
+                                  })}
+                                </React.Fragment>
+                              );
+                            });
+                          })()}
                         </tbody>
                     </table>
                   </div>
