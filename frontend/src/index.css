@@ -15,8 +15,8 @@
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --border-color: rgba(15, 23, 42, 0.08);
+  --text-secondary: #334155;
+  --border-color: rgba(15, 23, 42, 0.12);
   --glass-bg: rgba(255, 255, 255, 0.75);
   --glass-border: rgba(15, 23, 42, 0.05);
   --shadow-color: rgba(15, 23, 42, 0.05);
@@ -263,7 +263,7 @@ body {
 .modal-content-card {
   width: 100%;
   max-height: 92vh;
-  overflow: hidden; /* Prevent overflow and clip top accent bar to rounded corners */
+  overflow: visible; /* Prevent clipping of search suggestions dropdowns */
   border-radius: 1.75rem;
   box-shadow: 0 30px 60px -15px rgba(2, 6, 23, 0.45);
   border: 1px solid var(--glass-border);

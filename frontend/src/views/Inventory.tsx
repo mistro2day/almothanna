@@ -97,6 +97,9 @@ export default function Inventory() {
   const [batchProductSearch, setBatchProductSearch] = useState('');
   const [showBatchProductDropdown, setShowBatchProductDropdown] = useState(false);
 
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
+
   // Modals visibility
   const [showProductModal, setShowProductModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -172,6 +175,8 @@ export default function Inventory() {
         `تم إضافة المنتج الدوائي ${newProduct.name} (الاسم العلمي: ${newProduct.scientificName || '---'}) للفئة ${newProduct.category || 'عام'}`
       );
       setNewProduct({ name: '', scientificName: '', barcode: '', category: '', unit: 'Box', supplierId: '' });
+      setSupplierSearch('');
+      setShowSupplierDropdown(false);
       setShowProductModal(false);
     } catch (err) {
       console.error(err);
@@ -264,15 +269,15 @@ export default function Inventory() {
     const isTopPriority = activeProductBatches.length > 0 && activeProductBatches[0].id === batch.id;
 
     if (isExpired) {
-      return { label: 'منتهي الصلاحية ❌', colorClass: 'bg-rose-500/10 text-rose-500 border-rose-500/20 animate-pulse font-bold' };
+      return { label: 'منتهي الصلاحية ❌', colorClass: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 animate-pulse font-bold' };
     }
     if (isTopPriority) {
-      return { label: 'أولوية الصرف (FEFO) ⭐', colorClass: 'bg-amber-500/20 text-amber-500 border-amber-500/30 font-bold' };
+      return { label: 'أولوية الصرف (FEFO) ⭐', colorClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30 font-bold' };
     }
     if (isNearExpiry) {
       return { label: 'قريب الانتهاء ⚠️', colorClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' };
     }
-    return { label: 'صلاحية آمنة ✅', colorClass: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' };
+    return { label: 'صلاحية آمنة ✅', colorClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' };
   };
 
   // Excel Export with Styled Header (HTML Spreadsheet format which Excel opens perfectly)
@@ -519,7 +524,11 @@ export default function Inventory() {
               <span>إضافة تشغيلة (Batch)</span>
             </button>
             <button 
-              onClick={() => setShowProductModal(true)}
+              onClick={() => {
+                setShowProductModal(true);
+                setSupplierSearch('');
+                setShowSupplierDropdown(false);
+              }}
               className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/10 cursor-pointer touch-target w-full sm:w-auto font-bold"
             >
               <Plus className="w-4 h-4" />
@@ -714,14 +723,14 @@ export default function Inventory() {
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-sm">
                   <thead>
-                    <tr className="bg-[var(--bg-secondary)] border-b border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
-                      <th className="p-4">المنتج (الاسم التجاري)</th>
-                      <th className="p-4">الاسم العلمي</th>
-                      <th className="p-4">الفئة</th>
-                      <th className="p-4">الباركود</th>
-                      <th className="p-4 text-center">الوحدة</th>
-                      <th className="p-4 text-center">الكمية المتوفرة</th>
-                      <th className="p-4 no-print">المورد</th>
+                    <tr className="bg-emerald-700 text-white dark:bg-emerald-950/70 dark:text-emerald-200 font-bold border-b border-emerald-600/20">
+                      <th className="py-4 px-4 pr-6 text-right rounded-tr-2xl">المنتج (الاسم التجاري)</th>
+                      <th className="py-4 px-4 text-right">الاسم العلمي</th>
+                      <th className="py-4 px-4 text-right">الفئة</th>
+                      <th className="py-4 px-4 text-right">الباركود</th>
+                      <th className="py-4 px-4 text-center">الوحدة</th>
+                      <th className="py-4 px-4 text-center">الكمية المتوفرة</th>
+                      <th className="py-4 px-4 pl-6 text-left rounded-tl-2xl no-print">المورد</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border-color)]">
@@ -742,23 +751,23 @@ export default function Inventory() {
                             <tr 
                               key={p.id} 
                               onClick={() => setSelectedProduct(p)}
-                              className="text-[var(--text-primary)] hover:bg-[var(--border-color)]/20 transition-all cursor-pointer"
+                              className="hover:bg-[var(--border-color)]/30 transition-colors cursor-pointer"
                             >
-                              <td className="p-4 font-bold text-teal-600 dark:text-teal-400">{p.name}</td>
-                              <td className="p-4 text-[var(--text-secondary)] italic">{p.scientificName || '---'}</td>
-                              <td className="p-4">
-                                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500">
+                              <td className="py-4 px-4 pr-6 text-right font-bold text-[var(--text-primary)]">{p.name}</td>
+                              <td className="py-4 px-4 text-right text-[var(--text-secondary)] font-medium italic">{p.scientificName || '---'}</td>
+                              <td className="py-4 px-4 text-right">
+                                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 dark:text-emerald-400">
                                   {p.category || 'عام'}
                                 </span>
                               </td>
-                              <td className="p-4 font-mono text-[var(--text-secondary)]">{p.barcode || '---'}</td>
-                              <td className="p-4 text-center">{p.unit}</td>
-                              <td className="p-4 text-center">
-                                <span className={`font-bold font-mono px-3 py-1 rounded-full text-xs ${totalQty > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                              <td className="py-4 px-4 text-right font-mono text-[var(--text-secondary)]">{p.barcode || '---'}</td>
+                              <td className="py-4 px-4 text-center text-[var(--text-primary)]">{p.unit}</td>
+                              <td className="py-4 px-4 text-center">
+                                <span className={`font-bold font-mono px-3 py-1 rounded-full text-xs ${totalQty > 0 ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400'}`}>
                                   {totalQty} قطعة
                                 </span>
                               </td>
-                              <td className="p-4 text-xs font-semibold text-[var(--text-secondary)] no-print">
+                              <td className="py-4 px-4 pl-6 text-left text-xs font-semibold text-[var(--text-secondary)] no-print">
                                 {p.supplier?.name ? `🏢 ${p.supplier.name}` : '---'}
                               </td>
                             </tr>
@@ -825,14 +834,14 @@ export default function Inventory() {
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-sm">
                   <thead>
-                    <tr className="bg-[var(--bg-secondary)] border-b border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
-                      <th className="p-4">رقم التشغيلة</th>
-                      <th className="p-4">الدواء (الاسم التجاري)</th>
-                      <th className="p-4">الكمية</th>
-                      <th className="p-4">سعر التكلفة</th>
-                      <th className="p-4 text-center">حالة الصلاحية</th>
-                      <th className="p-4 text-center">أيام متبقية</th>
-                      <th className="p-4 text-left">تاريخ الانتهاء</th>
+                    <tr className="bg-emerald-700 text-white dark:bg-emerald-950/70 dark:text-emerald-200 font-bold border-b border-emerald-600/20">
+                      <th className="py-4 px-4 pr-6 text-right rounded-tr-2xl">رقم التشغيلة</th>
+                      <th className="py-4 px-4 text-right">الدواء (الاسم التجاري)</th>
+                      <th className="py-4 px-4 text-center">الكمية</th>
+                      <th className="py-4 px-4 text-center">سعر التكلفة</th>
+                      <th className="py-4 px-4 text-center">حالة الصلاحية</th>
+                      <th className="py-4 px-4 text-center">أيام متبقية</th>
+                      <th className="py-4 px-4 pl-6 text-left rounded-tl-2xl">تاريخ الانتهاء</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border-color)]">
@@ -859,28 +868,28 @@ export default function Inventory() {
                             <tr 
                               key={b.id} 
                               onClick={() => setSelectedBatch(b)}
-                              className="text-[var(--text-primary)] hover:bg-[var(--border-color)]/20 transition-all cursor-pointer"
+                              className="hover:bg-[var(--border-color)]/30 transition-colors cursor-pointer"
                             >
-                              <td className="p-4 font-mono font-bold text-teal-600 dark:text-teal-400">{b.batchNumber}</td>
-                              <td className="p-4">
-                                <div className="font-bold">{prod?.name || 'منتج غير معروف'}</div>
-                                {prod?.scientificName && <div className="text-xs text-[var(--text-secondary)] italic mt-0.5">{prod.scientificName}</div>}
+                              <td className="py-4 px-4 pr-6 text-right font-mono font-bold text-[var(--text-primary)]">{b.batchNumber}</td>
+                              <td className="py-4 px-4 text-right">
+                                <div className="font-bold text-[var(--text-primary)]">{prod?.name || 'منتج غير معروف'}</div>
+                                {prod?.scientificName && <div className="text-xs text-[var(--text-secondary)] font-medium italic mt-0.5">{prod.scientificName}</div>}
                               </td>
-                              <td className="p-4 font-bold font-mono">{b.qty}</td>
-                              <td className="p-4 font-mono text-[var(--text-secondary)]">{b.costPrice} SDG</td>
-                              <td className="p-4 text-center">
+                              <td className="py-4 px-4 text-center font-bold font-mono text-[var(--text-primary)]">{b.qty}</td>
+                              <td className="py-4 px-4 text-center font-mono text-[var(--text-secondary)]">{b.costPrice} SDG</td>
+                              <td className="py-4 px-4 text-center">
                                 <span className={`text-xs px-2.5 py-1 rounded-full border ${status.colorClass}`}>
                                   {status.label}
                                 </span>
                               </td>
-                              <td className="p-4 text-center font-bold font-mono">
+                              <td className="py-4 px-4 text-center font-bold font-mono">
                                 {daysLeft > 0 ? (
-                                  <span className={daysLeft <= 180 ? 'text-amber-500' : 'text-emerald-500'}>{daysLeft} يوم</span>
+                                  <span className={daysLeft <= 180 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>{daysLeft} يوم</span>
                                 ) : (
-                                  <span className="text-rose-500">منتهي</span>
+                                  <span className="text-rose-600 dark:text-rose-400">منتهي</span>
                                 )}
                               </td>
-                              <td className="p-4 text-left font-mono text-[var(--text-secondary)]">
+                              <td className="py-4 px-4 pl-6 text-left font-mono text-[var(--text-secondary)]">
                                 {new Date(b.expiryDate).toLocaleDateString('en-US')}
                               </td>
                             </tr>
@@ -1101,18 +1110,71 @@ export default function Inventory() {
                 />
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 relative">
                 <label className="block text-[var(--text-secondary)] font-medium">الشركة المصنعة / المورد</label>
-                <select 
-                  value={newProduct.supplierId}
-                  onChange={(e) => setNewProduct({ ...newProduct, supplierId: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-emerald-500"
-                >
-                  <option value="">اختر المورد/الشركة (اختياري)</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} {s.companyName ? `(${s.companyName})` : ''}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={supplierSearch}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSupplierSearch(val);
+                      setShowSupplierDropdown(true);
+                      if (!val.trim()) {
+                        setNewProduct(prev => ({ ...prev, supplierId: '' }));
+                      }
+                    }}
+                    onFocus={() => setShowSupplierDropdown(true)}
+                    onBlur={() => {
+                      setTimeout(() => setShowSupplierDropdown(false), 200);
+                    }}
+                    placeholder="ابحث عن المورد أو الشركة المصنعة..."
+                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-emerald-500"
+                  />
+                  {newProduct.supplierId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewProduct(prev => ({ ...prev, supplierId: '' }));
+                        setSupplierSearch('');
+                      }}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-rose-500 hover:text-rose-700 font-bold"
+                    >
+                      حذف الاختيار ×
+                    </button>
+                  )}
+                </div>
+
+                {showSupplierDropdown && (
+                  <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-[var(--border-color)]">
+                    {suppliers.filter(s => 
+                      s.name.toLowerCase().includes(supplierSearch.toLowerCase()) ||
+                      (s.companyName && s.companyName.toLowerCase().includes(supplierSearch.toLowerCase()))
+                    ).length === 0 ? (
+                      <div className="p-3 text-center text-xs text-[var(--text-secondary)]">لا توجد شركات/موردين مطابقين</div>
+                    ) : (
+                      suppliers.filter(s => 
+                        s.name.toLowerCase().includes(supplierSearch.toLowerCase()) ||
+                        (s.companyName && s.companyName.toLowerCase().includes(supplierSearch.toLowerCase()))
+                      ).map((s) => (
+                        <div
+                          key={s.id}
+                          onMouseDown={() => {
+                            setNewProduct(prev => ({ ...prev, supplierId: s.id }));
+                            setSupplierSearch(`${s.name}${s.companyName ? ` (${s.companyName})` : ''}`);
+                            setShowSupplierDropdown(false);
+                          }}
+                          className={`p-3 hover:bg-[var(--border-color)]/30 cursor-pointer transition-all flex flex-col justify-start text-right ${newProduct.supplierId === s.id ? 'bg-emerald-500/5' : ''}`}
+                        >
+                          <span className="font-bold text-sm text-[var(--text-primary)]">{s.name}</span>
+                          {s.companyName && (
+                            <span className="text-xs text-[var(--text-secondary)] mt-0.5">{s.companyName}</span>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-start gap-3 pt-3">
@@ -1124,7 +1186,11 @@ export default function Inventory() {
                 </button>
                 <button 
                   type="button"
-                  onClick={() => setShowProductModal(false)}
+                  onClick={() => {
+                    setShowProductModal(false);
+                    setSupplierSearch('');
+                    setShowSupplierDropdown(false);
+                  }}
                   className="px-4 py-2 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] rounded-xl font-medium cursor-pointer"
                 >
                   إلغاء

@@ -675,14 +675,29 @@ export default function Sales() {
   };
 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const selectedInvoiceIdForDetails = useSalesStore((state) => state.selectedInvoiceIdForDetails);
   const setSelectedInvoiceIdForDetails = useSalesStore((state) => state.setSelectedInvoiceIdForDetails);
+
+  const handleSelectInvoice = async (sale: Invoice) => {
+    try {
+      setLoadingDetails(true);
+      setSelectedInvoice(sale); // Set basic details first to show header
+      const { data } = await apiClient.get<Invoice>(`/sales/${sale.realId || sale.id}`);
+      setSelectedInvoice(data);
+    } catch (error) {
+      console.error('Failed to load invoice details:', error);
+      setSelectedInvoice(sale);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedInvoiceIdForDetails && sales.length > 0) {
       const matched = sales.find(s => s.id === selectedInvoiceIdForDetails);
       if (matched) {
-        setSelectedInvoice(matched);
+        handleSelectInvoice(matched);
         setSelectedInvoiceIdForDetails(null); // Reset global bridging state
       }
     }
@@ -744,7 +759,8 @@ export default function Sales() {
       
       const updated = data.find(s => s.id === selectedInvoice.id);
       if (updated) {
-        setSelectedInvoice(updated);
+        const { data: fullInvoice } = await apiClient.get<Invoice>(`/sales/${updated.realId || updated.id}`);
+        setSelectedInvoice(fullInvoice);
       } else {
         setSelectedInvoice(null);
       }
@@ -1331,9 +1347,9 @@ export default function Sales() {
       const { data: updatedSales } = await apiClient.get<Invoice[]>('/sales');
       setSales(updatedSales);
       
-      if (selectedInvoice && selectedInvoice.id === invoice.id) {
-        const refreshedInvoice = updatedSales.find(s => s.id === invoice.id);
-        if (refreshedInvoice) setSelectedInvoice(refreshedInvoice);
+      if (selectedInvoice && (selectedInvoice.id === invoice.id || selectedInvoice.realId === invoice.id)) {
+        const { data: fullInvoice } = await apiClient.get<Invoice>(`/sales/${invoice.realId || invoice.id}`);
+        setSelectedInvoice(fullInvoice);
       }
     } catch (error) {
       console.error('Failed to submit payment:', error);
@@ -1470,7 +1486,7 @@ export default function Sales() {
     const remaining = Math.max(0, sale.total - sale.paid);
     return (
       <div 
-        onClick={() => setSelectedInvoice(sale)} 
+        onClick={() => handleSelectInvoice(sale)} 
         className="glass-card p-4 rounded-xl border border-[var(--glass-border)] space-y-3 cursor-pointer hover:border-emerald-500/25 hover:shadow-lg transition-all"
       >
         <div className="flex justify-between items-start">
@@ -1947,131 +1963,140 @@ export default function Sales() {
                   </div>
                 </div>
 
-                {/* 📦 جدول أصناف الفاتورة المتطور */}
-                <div className="glass-card rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] overflow-hidden shadow-sm">
-                  <div className="p-5 border-b border-[var(--border-color)] flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ShoppingCart className="w-4.5 h-4.5 text-emerald-500" />
-                      <span className="text-sm font-black text-[var(--text-primary)]">الأدوية والمستلزمات المصدرة</span>
-                    </div>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500">
-                      {selectedInvoice.items.length} أصناف
-                    </span>
+                {loadingDetails ? (
+                  <div className="glass-card p-12 rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)] flex flex-col items-center justify-center space-y-4">
+                    <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-[var(--text-secondary)] font-bold text-sm">جاري تحميل تفاصيل الفاتورة ومخزون التشغيلات...</p>
                   </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-right text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-[var(--bg-primary)] border-b border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
-                          <th className="p-4 text-center">#</th>
-                          <th className="p-4 text-right">اسم الدواء / الصنف</th>
-                          <th className="p-4 text-center">رقم التشغيلة</th>
-                          <th className="p-4 text-center">الكمية</th>
-                          <th className="p-4 text-center">سعر الوحدة</th>
-                          <th className="p-4 text-left pl-6">الإجمالي الفرعي</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--border-color)]">
-                        {selectedInvoice.items.map((item, idx) => (
-                          <tr key={idx} className="text-[var(--text-primary)] hover:bg-[var(--border-color)]/20 transition-colors">
-                            <td className="p-4 text-center font-mono text-[var(--text-secondary)]">{idx + 1}</td>
-                            <td className="p-4 text-right font-black text-[var(--text-primary)]">{item.productName}</td>
-                            <td className="p-4 text-center font-mono">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] font-semibold text-[10px]">
-                                {item.batchNumber}
-                              </span>
-                            </td>
-                            <td className="p-4 text-center font-black font-mono text-sm">{item.qty}</td>
-                            <td className="p-4 text-center font-mono text-[var(--text-secondary)]">{item.price.toLocaleString('en-US')} SDG</td>
-                            <td className="p-4 text-left pl-6 font-black font-mono text-emerald-600">{(item.qty * item.price).toLocaleString('en-US')} SDG</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* ⏳ خط زمني تفاعلي وأنيق للأقساط والدفعات المستحقة */}
-                {selectedInvoice.installments && selectedInvoice.installments.length > 0 && (
-                  <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-sm space-y-6">
-                    <div className="flex items-center gap-2 border-b border-[var(--border-color)] pb-3">
-                      <Calendar className="w-4.5 h-4.5 text-cyan-500" />
-                      <span className="text-sm font-black text-[var(--text-primary)]">الخط الزمني وجدول سداد الأقساط</span>
+                ) : (
+                  <>
+                    {/* 📦 جدول أصناف الفاتورة المتطور */}
+                    <div className="glass-card rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] overflow-hidden shadow-sm">
+                      <div className="p-5 border-b border-[var(--border-color)] flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ShoppingCart className="w-4.5 h-4.5 text-emerald-500" />
+                          <span className="text-sm font-black text-[var(--text-primary)]">الأدوية والمستلزمات المصدرة</span>
+                        </div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500">
+                          {selectedInvoice.items.length} أصناف
+                        </span>
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-[var(--bg-primary)] border-b border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
+                              <th className="p-4 text-center">#</th>
+                              <th className="p-4 text-right">اسم الدواء / الصنف</th>
+                              <th className="p-4 text-center">رقم التشغيلة</th>
+                              <th className="p-4 text-center">الكمية</th>
+                              <th className="p-4 text-center">سعر الوحدة</th>
+                              <th className="p-4 text-left pl-6">الإجمالي الفرعي</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--border-color)]">
+                            {selectedInvoice.items.map((item, idx) => (
+                              <tr key={idx} className="text-[var(--text-primary)] hover:bg-[var(--border-color)]/20 transition-colors">
+                                <td className="p-4 text-center font-mono text-[var(--text-secondary)]">{idx + 1}</td>
+                                <td className="p-4 text-right font-black text-[var(--text-primary)]">{item.productName}</td>
+                                <td className="p-4 text-center font-mono">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] font-semibold text-[10px]">
+                                    {item.batchNumber}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-center font-black font-mono text-sm">{item.qty}</td>
+                                <td className="p-4 text-center font-mono text-[var(--text-secondary)]">{item.price.toLocaleString('en-US')} SDG</td>
+                                <td className="p-4 text-left pl-6 font-black font-mono text-emerald-600">{(item.qty * item.price).toLocaleString('en-US')} SDG</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
 
-                    <div className="relative pr-6 border-r-2 border-dashed border-[var(--border-color)] space-y-6 mr-3">
-                      {selectedInvoice.installments.map((inst, idx) => {
-                        const remaining = Math.max(0, inst.amount - inst.paidAmount);
-                        return (
-                          <div key={inst.id || idx} className="relative group text-right">
-                            
-                            {/* نقطة الخط الزمني المضيئة */}
-                            <div className={`absolute -right-[31px] top-1 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-                              inst.status === 'PAID' ? 'bg-emerald-500 border-emerald-500 ring-4 ring-emerald-500/10' :
-                              inst.status === 'PARTIAL' ? 'bg-[var(--bg-secondary)] border-amber-500 ring-4 ring-amber-500/10' :
-                              'bg-[var(--bg-secondary)] border-slate-300 dark:border-slate-700'
-                            }`}>
-                              {inst.status === 'PAID' && (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5 text-white">
-                                  <polyline points="20 6 9 17 4 12"></polyline>
-                                </svg>
-                              )}
-                            </div>
+                    {/* ⏳ خط زمني تفاعلي وأنيق للأقساط والدفعات المستحقة */}
+                    {selectedInvoice.installments && selectedInvoice.installments.length > 0 && (
+                      <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-sm space-y-6">
+                        <div className="flex items-center gap-2 border-b border-[var(--border-color)] pb-3">
+                          <Calendar className="w-4.5 h-4.5 text-cyan-500" />
+                          <span className="text-sm font-black text-[var(--text-primary)]">الخط الزمني وجدول سداد الأقساط</span>
+                        </div>
 
-                            <div 
-                              className={`bg-[var(--bg-primary)]/40 hover:bg-[var(--bg-primary)] border border-[var(--border-color)]/70 hover:border-cyan-500/15 p-4 rounded-2xl transition-all duration-300 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${remaining > 0 ? 'cursor-pointer hover:shadow-md hover:scale-[1.01]' : 'opacity-80'}`}
-                              onClick={() => remaining > 0 && openPaymentModal(selectedInvoice, remaining, inst.id)}
-                            >
-                              <div className="space-y-1.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-black text-xs text-[var(--text-primary)]">القسط #{idx + 1}</span>
-                                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black border ${
-                                    inst.status === 'PAID' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' :
-                                    inst.status === 'PARTIAL' ? 'bg-amber-500/10 border-amber-500/20 text-amber-600' :
-                                    'bg-slate-500/10 border-slate-500/20 text-[var(--text-secondary)]'
-                                  }`}>
-                                    {inst.status === 'PAID' ? 'تم السداد' : inst.status === 'PARTIAL' ? 'سداد جزئي' : 'قيد الانتظار'}
-                                  </span>
+                        <div className="relative pr-6 border-r-2 border-dashed border-[var(--border-color)] space-y-6 mr-3">
+                          {selectedInvoice.installments.map((inst, idx) => {
+                            const remaining = Math.max(0, inst.amount - inst.paidAmount);
+                            return (
+                              <div key={inst.id || idx} className="relative group text-right">
+                                
+                                {/* نقطة الخط الزمني المضيئة */}
+                                <div className={`absolute -right-[31px] top-1 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                                  inst.status === 'PAID' ? 'bg-emerald-500 border-emerald-500 ring-4 ring-emerald-500/10' :
+                                  inst.status === 'PARTIAL' ? 'bg-[var(--bg-secondary)] border-amber-500 ring-4 ring-amber-500/10' :
+                                  'bg-[var(--bg-secondary)] border-slate-300 dark:border-slate-700'
+                                }`}>
+                                  {inst.status === 'PAID' && (
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5 text-white">
+                                      <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                  )}
                                 </div>
-                                <div className="text-[10px] text-[var(--text-secondary)] font-semibold flex items-center gap-2">
-                                  <span>تاريخ الاستحقاق:</span>
-                                  <span className="font-mono font-bold text-[var(--text-primary)]">
-                                    {new Date(inst.dueDate).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
-                                  </span>
-                                </div>
-                                {inst.notes && (
-                                  <p className="text-[10px] text-[var(--text-secondary)] bg-[var(--bg-secondary)] px-2.5 py-1 rounded-lg border border-[var(--border-color)] inline-block">
-                                    💡 {inst.notes}
-                                  </p>
-                                )}
-                              </div>
 
-                              <div className="flex items-center gap-5 sm:self-center font-mono">
-                                <div className="text-center">
-                                  <span className="block text-[9px] text-[var(--text-secondary)] font-bold">قيمة القسط</span>
-                                  <strong className="text-xs text-[var(--text-primary)]">{inst.amount.toLocaleString()} SDG</strong>
-                                </div>
-                                <div className="w-[1px] h-8 bg-[var(--border-color)]" />
-                                <div className="text-center">
-                                  <span className="block text-[9px] text-emerald-600 font-bold">المسدد منه</span>
-                                  <strong className="text-xs text-emerald-600">{inst.paidAmount.toLocaleString()} SDG</strong>
-                                </div>
-                                {remaining > 0 && (
-                                  <>
+                                <div 
+                                  className={`bg-[var(--bg-primary)]/40 hover:bg-[var(--bg-primary)] border border-[var(--border-color)]/70 hover:border-cyan-500/15 p-4 rounded-2xl transition-all duration-300 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${remaining > 0 ? 'cursor-pointer hover:shadow-md hover:scale-[1.01]' : 'opacity-80'}`}
+                                  onClick={() => remaining > 0 && openPaymentModal(selectedInvoice, remaining, inst.id)}
+                                >
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-black text-xs text-[var(--text-primary)]">القسط #{idx + 1}</span>
+                                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black border ${
+                                        inst.status === 'PAID' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' :
+                                        inst.status === 'PARTIAL' ? 'bg-amber-500/10 border-amber-500/20 text-amber-600' :
+                                        'bg-slate-500/10 border-slate-500/20 text-[var(--text-secondary)]'
+                                      }`}>
+                                        {inst.status === 'PAID' ? 'تم السداد' : inst.status === 'PARTIAL' ? 'سداد جزئي' : 'قيد الانتظار'}
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] text-[var(--text-secondary)] font-semibold flex items-center gap-2">
+                                      <span>تاريخ الاستحقاق:</span>
+                                      <span className="font-mono font-bold text-[var(--text-primary)]">
+                                        {new Date(inst.dueDate).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                      </span>
+                                    </div>
+                                    {inst.notes && (
+                                      <p className="text-[10px] text-[var(--text-secondary)] bg-[var(--bg-secondary)] px-2.5 py-1 rounded-lg border border-[var(--border-color)] inline-block">
+                                        💡 {inst.notes}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-5 sm:self-center font-mono">
+                                    <div className="text-center">
+                                      <span className="block text-[9px] text-[var(--text-secondary)] font-bold">قيمة القسط</span>
+                                      <strong className="text-xs text-[var(--text-primary)]">{inst.amount.toLocaleString()} SDG</strong>
+                                    </div>
                                     <div className="w-[1px] h-8 bg-[var(--border-color)]" />
                                     <div className="text-center">
-                                      <span className="block text-[9px] text-rose-500 font-bold">المتبقي للقسط</span>
-                                      <strong className="text-xs text-rose-500">{remaining.toLocaleString()} SDG</strong>
+                                      <span className="block text-[9px] text-emerald-600 font-bold">المسدد منه</span>
+                                      <strong className="text-xs text-emerald-600">{inst.paidAmount.toLocaleString()} SDG</strong>
                                     </div>
-                                  </>
-                                )}
+                                    {remaining > 0 && (
+                                      <>
+                                        <div className="w-[1px] h-8 bg-[var(--border-color)]" />
+                                        <div className="text-center">
+                                          <span className="block text-[9px] text-rose-500 font-bold">المتبقي للقسط</span>
+                                          <strong className="text-xs text-rose-500">{remaining.toLocaleString()} SDG</strong>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -2449,7 +2474,7 @@ export default function Sales() {
                         return (
                           <tr 
                             key={sale.id} 
-                            onClick={() => setSelectedInvoice(sale)} 
+                            onClick={() => handleSelectInvoice(sale)} 
                             className="hover:bg-[var(--border-color)]/30 transition-colors cursor-pointer"
                           >
                             <td className="py-4 px-4 pr-6 font-mono font-semibold text-[var(--text-primary)]">{sale.id}</td>

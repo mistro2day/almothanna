@@ -13,6 +13,7 @@ import { ActivitiesModule } from './activities/activities.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { RepresentativesModule } from './representatives/representatives.module';
+import { ExpensesModule } from './expenses/expenses.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { RepresentativesModule } from './representatives/representatives.module'
     NotificationsModule,
     ReportsModule,
     RepresentativesModule,
+    ExpensesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

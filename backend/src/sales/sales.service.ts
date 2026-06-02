@@ -160,12 +160,6 @@ export class SalesService {
         customer: true,
         representative: true,
         installments: true,
-        items: {
-          include: {
-            product: true,
-            batch: true,
-          },
-        },
       },
     });
 
@@ -177,6 +171,7 @@ export class SalesService {
 
       return {
         id: displayId,
+        realId: sale.id,
         customerName: sale.customer.name,
         total: sale.total,
         paid: sale.paid,
@@ -187,12 +182,7 @@ export class SalesService {
           name: sale.representative.name,
           commissionRate: sale.representative.commissionRate,
         } : null,
-        items: sale.items.map((item: any) => ({
-          productName: item.product.name,
-          batchNumber: item.batch.batchNumber,
-          qty: item.qty,
-          price: item.price,
-        })),
+        items: [],
         installments: (sale as any).installments?.map((inst: any) => ({
           id: inst.id,
           dueDate: inst.dueDate.toISOString(),
@@ -203,6 +193,64 @@ export class SalesService {
         })) || [],
       };
     });
+  }
+
+  async getSaleById(id: string) {
+    const sale = await this.prisma.sale.findFirst({
+      where: {
+        OR: [
+          { id },
+        ]
+      },
+      include: {
+        customer: true,
+        representative: true,
+        installments: true,
+        items: {
+          include: {
+            product: true,
+            batch: true,
+          },
+        },
+      },
+    });
+
+    if (!sale) {
+      throw new NotFoundException('Sale not found');
+    }
+
+    const displayId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sale.id)
+      ? `IN-${String(sale.createdAt.getTime().toString().slice(-5))}`
+      : sale.id;
+
+    return {
+      id: displayId,
+      realId: sale.id,
+      customerName: sale.customer.name,
+      total: sale.total,
+      paid: sale.paid,
+      status: sale.status,
+      createdAt: sale.createdAt.toISOString(),
+      representative: sale.representative ? {
+        id: sale.representative.id,
+        name: sale.representative.name,
+        commissionRate: sale.representative.commissionRate,
+      } : null,
+      items: sale.items.map((item: any) => ({
+        productName: item.product.name,
+        batchNumber: item.batch.batchNumber,
+        qty: item.qty,
+        price: item.price,
+      })),
+      installments: (sale as any).installments?.map((inst: any) => ({
+        id: inst.id,
+        dueDate: inst.dueDate.toISOString(),
+        amount: inst.amount,
+        paidAmount: inst.paidAmount,
+        status: inst.status,
+        notes: inst.notes,
+      })) || [],
+    };
   }
 
   async deleteSale(id: string) {

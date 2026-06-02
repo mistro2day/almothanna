@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/apiClient';
 import DatePicker from '../components/DatePicker';
 import { useSalesStore } from '../store/useSalesStore';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -38,6 +40,13 @@ import {
 type TabType = 'sales' | 'inventory' | 'suppliers' | 'customers' | 'shipping' | 'representatives';
 
 export default function Reports() {
+  const { settings, fetchSettings } = useSettingsStore();
+  const { user } = useAuthStore();
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
   const [activeTab, setActiveTab] = useState<TabType>('sales');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -145,51 +154,74 @@ export default function Reports() {
 
   // Premium Excel XML Exporter (Supports RTL direction, proper headers and columns format)
   const exportToExcelXML = (dataList: any[], filename: string, headers: string[], rowMapper: (item: any) => string[], title: string, subtitle: string) => {
-    let xml = `<?xml version="1.0" encoding="utf-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Vertical="Bottom"/>
-   <Borders/>
-   <Font ss:FontName="Calibri" x:CharSet="178" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
-   <Interior/>
-   <NumberFormat/>
-   <Protection/>
-  </Style>
-  <Style ss:ID="Title">
-   <Font ss:FontName="Calibri" ss:Size="16" ss:Color="#059669" ss:Bold="1"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Subtitle">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#4b5563" ss:Italic="1"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Header">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/>
-   <Interior ss:Color="#059669" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Cell">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-  </Style>
- </Styles>
- <Worksheet ss:Name="Sheet1">
-  <Table>
-`;
+    const colDefs = headers.map(() => '<Column ss:Width="130" ss:AutoFitWidth="1" />').join('\n');
+    let xml = '<?xml version="1.0" encoding="utf-8"?>\n' +
+      '<?mso-application progid="Excel.Sheet"?>\n' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n' +
+      ' xmlns:o="urn:schemas-microsoft-com:office:office"\n' +
+      ' xmlns:x="urn:schemas-microsoft-com:office:excel"\n' +
+      ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"\n' +
+      ' xmlns:html="http://www.w3.org/TR/REC-html40">\n' +
+      ' <Styles>\n' +
+      '  <Style ss:ID="Default" ss:Name="Normal">\n' +
+      '   <Alignment ss:Vertical="Bottom"/>\n' +
+      '   <Borders/>\n' +
+      '   <Font ss:FontName="Calibri" x:CharSet="178" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>\n' +
+      '   <Interior/>\n' +
+      '   <NumberFormat/>\n' +
+      '   <Protection/>\n' +
+      '  </Style>\n' +
+      '  <Style ss:ID="CompanyHeader">\n' +
+      '   <Font ss:FontName="Calibri" ss:Size="18" ss:Color="#059669" ss:Bold="1"/>\n' +
+      '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>\n' +
+      '  </Style>\n' +
+      '  <Style ss:ID="Title">\n' +
+      '   <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#1f2937" ss:Bold="1"/>\n' +
+      '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>\n' +
+      '  </Style>\n' +
+      '  <Style ss:ID="Subtitle">\n' +
+      '   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#4b5563" ss:Italic="1"/>\n' +
+      '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>\n' +
+      '  </Style>\n' +
+      '  <Style ss:ID="Header">\n' +
+      '   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/>\n' +
+      '   <Interior ss:Color="#059669" ss:Pattern="Solid"/>\n' +
+      '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>\n' +
+      '  </Style>\n' +
+      '  <Style ss:ID="Cell">\n' +
+      '   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>\n' +
+      '  </Style>\n' +
+      ' </Styles>\n' +
+      '  <Worksheet ss:Name="Sheet1">\n' +
+      '   <Table>\n' +
+      colDefs + '\n';
+
+    // Company Name
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyAddress = settings?.address || "";
+    const companyPhone = settings?.phone || "";
+    let contactInfo = "";
+    if (companyAddress) contactInfo += "العنوان: " + companyAddress;
+    if (companyPhone) contactInfo += (contactInfo ? " | " : "") + "الهاتف: " + companyPhone;
+
+    xml += '   <Row ss:Height="35">\n';
+    xml += '    <Cell ss:MergeAcross="' + (headers.length - 1) + '" ss:StyleID="CompanyHeader"><Data ss:Type="String">' + companyName + '</Data></Cell>\n';
+    xml += '   </Row>\n';
+
+    if (contactInfo) {
+      xml += '   <Row ss:Height="20">\n';
+      xml += '    <Cell ss:MergeAcross="' + (headers.length - 1) + '" ss:StyleID="Subtitle"><Data ss:Type="String">' + contactInfo + '</Data></Cell>\n';
+      xml += '   </Row>\n';
+    }
 
     // Title
-    xml += '   <Row ss:Height="30">\n';
-    xml += `    <Cell ss:MergeAcross="${headers.length - 1}" ss:StyleID="Title"><Data ss:Type="String">${title}</Data></Cell>\n`;
+    xml += '   <Row ss:Height="25">\n';
+    xml += '    <Cell ss:MergeAcross="' + (headers.length - 1) + '" ss:StyleID="Title"><Data ss:Type="String">' + title + '</Data></Cell>\n';
     xml += '   </Row>\n';
 
     // Subtitle / Info
     xml += '   <Row ss:Height="20">\n';
-    xml += `    <Cell ss:MergeAcross="${headers.length - 1}" ss:StyleID="Subtitle"><Data ss:Type="String">${subtitle}</Data></Cell>\n`;
+    xml += '    <Cell ss:MergeAcross="' + (headers.length - 1) + '" ss:StyleID="Subtitle"><Data ss:Type="String">' + subtitle + '</Data></Cell>\n';
     xml += '   </Row>\n';
 
     // Empty space
@@ -198,7 +230,7 @@ export default function Reports() {
     // Headers
     xml += '   <Row ss:Height="25">\n';
     headers.forEach(h => {
-      xml += `    <Cell ss:StyleID="Header"><Data ss:Type="String">${h}</Data></Cell>\n`;
+      xml += '    <Cell ss:StyleID="Header"><Data ss:Type="String">' + h + '</Data></Cell>\n';
     });
     xml += '   </Row>\n';
 
@@ -210,17 +242,17 @@ export default function Reports() {
         const cleanVal = val.replace(/,/g, '').replace(/ SDG/g, '').replace(/%/g, '').trim();
         const isNum = !isNaN(Number(cleanVal)) && cleanVal !== '';
         const type = isNum ? 'Number' : 'String';
-        xml += `    <Cell ss:StyleID="Cell"><Data ss:Type="${type}">${cleanVal}</Data></Cell>\n`;
+        xml += '    <Cell ss:StyleID="Cell"><Data ss:Type="' + type + '">' + cleanVal + '</Data></Cell>\n';
       });
       xml += '   </Row>\n';
     });
 
-    xml += `  </Table>
-  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-   <DisplayRightToLeft/>
-  </WorksheetOptions>
- </Worksheet>
-</Workbook>`;
+    xml += '  </Table>\n' +
+      '  <x:WorksheetOptions>\n' +
+      '   <x:DisplayRightToLeft/>\n' +
+      '  </x:WorksheetOptions>\n' +
+      ' </Worksheet>\n' +
+      '</Workbook>';
 
     const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -247,6 +279,205 @@ export default function Reports() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Premium PDF Exporter Utility
+  const exportPDFGeneral = (
+    dataList: any[],
+    title: string,
+    headers: string[],
+    rowMapper: (item: any) => string[],
+    filename: string
+  ) => {
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyPhone = settings?.phone || "غير محدد";
+    const companyAddress = settings?.address || "السودان";
+    
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) return;
+
+    const rowsHTML = dataList.map((item, idx) => {
+      const cols = rowMapper(item);
+      return `
+        <tr>
+          <td style="text-align: center; padding: 6px; border: 1px solid #ddd;">${idx + 1}</td>
+          ${cols.map((col, cIdx) => {
+            const isFirst = cIdx === 0;
+            return `<td style="padding: 6px; border: 1px solid #ddd; text-align: ${isFirst ? 'right' : 'center'}; font-weight: ${isFirst ? 'bold' : 'normal'};">${col}</td>`;
+          }).join('')}
+        </tr>
+      `;
+    }).join('');
+
+    const headerHTML = headers.map(h => `<th style="background-color: #059669; color: white; padding: 8px 6px; border: 1px solid #059669; font-size: 12px;">${h}</th>`).join('');
+
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    @page { 
+      size: A4 landscape; 
+      margin: 15mm 12mm 15mm 12mm; 
+    }
+    * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+    body { background: #fff; color: #1e293b; line-height: 1.4; padding: 0; margin: 0; }
+    
+    table.print-layout {
+      width: 100%;
+      border-collapse: collapse;
+      border: none !important;
+    }
+    table.print-layout > thead > tr > td,
+    table.print-layout > tbody > tr > td,
+    table.print-layout > tfoot > tr > td {
+      border: none !important;
+      padding: 0 !important;
+    }
+
+    .header-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #059669;
+      padding-bottom: 12px;
+      margin-bottom: 15px;
+    }
+    .company-details h1 { font-size: 22px; color: #065f46; margin: 0 0 4px 0; font-weight: 800; }
+    .company-details p { font-size: 11px; color: #475569; margin: 0; }
+    .doc-title { text-align: left; }
+    .doc-title h2 { font-size: 18px; color: #059669; margin: 0; font-weight: 700; }
+    .doc-title p { font-size: 11px; color: #64748b; margin-top: 2px; }
+    
+    .meta-bar { 
+      background: #f8fafc; 
+      border: 1px solid #e2e8f0; 
+      border-radius: 8px; 
+      padding: 10px 14px; 
+      margin-bottom: 15px; 
+      font-size: 11px; 
+      display: flex; 
+      justify-content: space-between; 
+    }
+    .meta-bar span { color: #64748b; }
+    .meta-bar strong { color: #0f172a; }
+
+    table.data-table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      margin-bottom: 20px; 
+    }
+    table.data-table th { 
+      background-color: #059669; 
+      color: white; 
+      padding: 8px 6px; 
+      border: 1px solid #059669; 
+      font-size: 12px; 
+      font-weight: 700;
+      text-align: center;
+    }
+    table.data-table td { 
+      font-size: 11px; 
+      border: 1px solid #e2e8f0; 
+      padding: 6px;
+    }
+    table.data-table tr:nth-child(even) { background: #f8fafc; }
+    
+    .footer-section { 
+      border-top: 2px dashed #e2e8f0; 
+      padding-top: 10px; 
+      display: flex; 
+      justify-content: space-between; 
+      font-size: 10px; 
+      color: #64748b; 
+      margin-top: 15px;
+    }
+    .stamp { 
+      border: 2px dashed #cbd5e1; 
+      border-radius: 6px; 
+      padding: 4px 12px; 
+      font-size: 11px; 
+      font-weight: 700; 
+      color: #059669; 
+    }
+    
+    @media print { 
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+    }
+  </style>
+</head>
+<body>
+  <table class="print-layout">
+    <thead>
+      <tr>
+        <td>
+          <div class="header-section">
+            <div class="company-details">
+              <h1>${companyName}</h1>
+              <p>🏢 ${companyAddress} &nbsp;|&nbsp; 📞 هاتف: ${companyPhone}</p>
+            </div>
+            <div class="doc-title">
+              <h2>${title}</h2>
+              <p>تاريخ الطباعة: ${new Date().toLocaleString('ar-SA')}</p>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <div class="meta-bar">
+            <div><span>تقرير مالي موثق لشركة:</span> <strong>${companyName}</strong></div>
+            <div><span>عدد السجلات المطبوعة:</span> <strong>${dataList.length} سجل</strong></div>
+            <div><span>المسؤول:</span> <strong>${user?.name || "مدير النظام"}</strong></div>
+          </div>
+          
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 40px; background-color: #059669; color: white; border: 1px solid #059669;">#</th>
+                ${headerHTML}
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHTML}
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>
+          <div class="footer-section">
+            <div>شكراً لتعاملكم مع <strong>${companyName}</strong> - تم توليد المستند تلقائياً عبر نظام ERP.</div>
+            <div class="stamp">توقيع وختم الإدارة</div>
+          </div>
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <script>
+    window.onload = function() {
+      setTimeout(() => {
+        window.print();
+        window.onafterprint = function() {
+          window.close();
+        };
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+    `);
+    printWindow.document.close();
   };
 
   // Printable layout trigger
@@ -502,16 +733,31 @@ export default function Reports() {
                         />
                       </div>
                       <button 
-                        onClick={() => exportToCSV(
+                        onClick={() => exportToExcelXML(
                           salesData.itemsSalesReport, 
                           'sales_by_item_report', 
                           ['اسم المنتج', 'الاسم العلمي', 'التصنيف', 'الكمية المباعة', 'الإيرادات', 'أرباح الصنف'],
-                          (item) => [item.productName, item.scientificName, item.category, item.qtySold.toString(), item.revenue.toString(), item.profit.toString()]
+                          (item) => [item.productName, item.scientificName || '-', item.category || '-', item.qtySold.toString(), item.revenue.toString(), item.profit.toString()],
+                          'تقرير مبيعات الأصناف التفصيلي',
+                          `إجمالي الإيرادات: ${salesData.summary.totalRevenue.toLocaleString()} SDG | إجمالي الأرباح: ${salesData.summary.totalProfit.toLocaleString()} SDG`
                         )}
                         className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>تصدير Excel</span>
+                      </button>
+                      <button 
+                        onClick={() => exportPDFGeneral(
+                          salesData.itemsSalesReport.filter((item: any) => item.productName.toLowerCase().includes(salesSearch.toLowerCase()) || item.scientificName.toLowerCase().includes(salesSearch.toLowerCase())),
+                          'تقرير مبيعات الأصناف التفصيلي',
+                          ['اسم المنتج', 'الاسم العلمي', 'التصنيف', 'الكمية المباعة', 'إجمالي الإيرادات', 'صافي الأرباح'],
+                          (item) => [item.productName, item.scientificName || '-', item.category || '-', `${item.qtySold} وحدة`, `${item.revenue.toLocaleString()} SDG`, `${item.profit.toLocaleString()} SDG`],
+                          'sales_by_item_report'
+                        )}
+                        className="flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>تصدير PDF</span>
                       </button>
                     </div>
                   </div>
@@ -779,6 +1025,19 @@ export default function Reports() {
                           >
                             <Download className="w-3.5 h-3.5" />
                             <span>تصدير القائمة (Excel)</span>
+                          </button>
+                          <button 
+                            onClick={() => exportPDFGeneral(
+                              salesData.representativesSalesReport.filter((rep: any) => rep.name.toLowerCase().includes(repSearch.toLowerCase())),
+                              'تقرير الأداء العام والعمولات لمناديب المبيعات',
+                              ['اسم المندوب', 'رقم الهاتف', 'نسبة العمولة', 'عدد الفواتير', 'إجمالي المبيعات', 'المبالغ المحصّلة', 'العمولة المستحقة'],
+                              (rep) => [rep.name, rep.phone || '-', `${rep.commissionRate}%`, `${rep.salesCount} فاتورة`, `${rep.totalSales.toLocaleString()} SDG`, `${rep.totalPaid.toLocaleString()} SDG`, `${rep.totalCommission.toLocaleString()} SDG`],
+                              'representatives_performance_report'
+                            )}
+                            className="flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer shrink-0"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>تصدير PDF</span>
                           </button>
                         </div>
                       </div>
@@ -1081,7 +1340,38 @@ export default function Reports() {
 
                 {/* Stock Movements */}
                 <div className="glass-card p-5 rounded-2xl space-y-4">
-                  <h3 className="text-base font-bold text-[var(--text-primary)]">🔄 سجل حركات المخزون الأخيرة (وارد / صادر)</h3>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <h3 className="text-base font-bold text-[var(--text-primary)]">🔄 سجل حركات المخزون الأخيرة (وارد / صادر)</h3>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => exportToExcelXML(
+                          inventoryData.movements, 
+                          'stock_movements_report', 
+                          ['اسم المنتج', 'رقم التشغيلة', 'نوع الحركة', 'الكمية', 'سبب التحرك', 'التاريخ'],
+                          (m) => [m.productName, m.batchNumber, m.type, m.qty.toString(), m.reason, m.date],
+                          'تقرير تتبع وحركات المخزون الدوائي',
+                          `تاريخ التصدير: ${new Date().toLocaleDateString('ar-SA')}`
+                        )}
+                        className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>تصدير Excel</span>
+                      </button>
+                      <button 
+                        onClick={() => exportPDFGeneral(
+                          inventoryData.movements,
+                          'تقرير تتبع وحركات المخزون الدوائي',
+                          ['اسم المنتج', 'رقم التشغيلة', 'نوع الحركة', 'الكمية', 'سبب التحرك', 'التاريخ'],
+                          (m) => [m.productName, m.batchNumber, m.type, `${m.qty} عبوة`, m.reason, m.date],
+                          'stock_movements_report'
+                        )}
+                        className="flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>تصدير PDF</span>
+                      </button>
+                    </div>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-right border-collapse text-xs">
                       <thead>
@@ -1219,16 +1509,31 @@ export default function Reports() {
                         />
                       </div>
                       <button 
-                        onClick={() => exportToCSV(
+                        onClick={() => exportToExcelXML(
                           supplierData.suppliers, 
                           'suppliers_report', 
                           ['اسم المورد', 'الشركة', 'النوع', 'الهاتف', 'إجمالي الطلبيات', 'إجمالي المسدد', 'الديون المتبقية', 'عدد الفواتير'],
-                          (s) => [s.name, s.companyName, s.type, s.phone, s.totalPurchases.toString(), s.totalPaid.toString(), s.remainingDebt.toString(), s.orderCount.toString()]
+                          (s) => [s.name, s.companyName || '-', s.type === 'pharma_company' ? 'شركة أدوية' : 'مورد آخر', s.phone, s.totalPurchases.toString(), s.totalPaid.toString(), s.remainingDebt.toString(), s.orderCount.toString()],
+                          'تقرير معاملات وكشوفات الموردين المالي',
+                          `تاريخ التصدير: ${new Date().toLocaleDateString('ar-SA')}`
                         )}
                         className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>تصدير Excel</span>
+                      </button>
+                      <button 
+                        onClick={() => exportPDFGeneral(
+                          supplierData.suppliers.filter((s: any) => s.name.toLowerCase().includes(supplierSearch.toLowerCase()) || (s.companyName || '').toLowerCase().includes(supplierSearch.toLowerCase())),
+                          'تقرير معاملات وكشوفات الموردين المالي',
+                          ['اسم المورد', 'الشركة', 'النوع', 'الهاتف', 'إجمالي الطلبيات', 'إجمالي المسدد', 'الديون المتبقية', 'عدد الفواتير'],
+                          (s) => [s.name, s.companyName || '-', s.type === 'pharma_company' ? 'شركة أدوية' : 'مورد آخر', s.phone, `${s.totalPurchases.toLocaleString()} SDG`, `${s.totalPaid.toLocaleString()} SDG`, `${s.remainingDebt.toLocaleString()} SDG`, `${s.orderCount} فاتورة`],
+                          'suppliers_report'
+                        )}
+                        className="flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>تصدير PDF</span>
                       </button>
                     </div>
                   </div>
@@ -1391,16 +1696,31 @@ export default function Reports() {
                           />
                         </div>
                         <button 
-                          onClick={() => exportToCSV(
+                          onClick={() => exportToExcelXML(
                             customerData.customers, 
                             'customers_credit_report', 
                             ['العميل', 'النوع', 'الولاية', 'الهاتف', 'إجمالي المسحوبات', 'المدفوع', 'المستحق الحالي', 'سقف الائتمان', 'الاستهلاك الائتماني %'],
-                            (c) => [c.name, c.type, c.state, c.phone, c.totalSales.toString(), c.totalPaid.toString(), c.remainingDebt.toString(), c.creditLimit.toString(), `${c.creditUsagePercent}%`]
+                            (c) => [c.name, c.type, c.state, c.phone, c.totalSales.toString(), c.totalPaid.toString(), c.remainingDebt.toString(), c.creditLimit.toString(), `${c.creditUsagePercent}%`],
+                            'تقرير ديون العملاء وسقوفات الائتمان',
+                            `تاريخ التصدير: ${new Date().toLocaleDateString('ar-SA')}`
                           )}
                           className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>تصدير Excel</span>
+                        </button>
+                        <button 
+                          onClick={() => exportPDFGeneral(
+                            customerData.customers.filter((c: any) => c.name.toLowerCase().includes(customerSearch.toLowerCase())),
+                            'تقرير ديون العملاء وسقوفات الائتمان',
+                            ['العميل', 'النوع', 'الولاية', 'الهاتف', 'إجمالي المسحوبات', 'المدفوع', 'المستحق الحالي', 'سقف الائتمان', 'الاستهلاك الائتماني'],
+                            (c) => [c.name, c.type, c.state, c.phone, `${c.totalSales.toLocaleString()} SDG`, `${c.totalPaid.toLocaleString()} SDG`, `${c.remainingDebt.toLocaleString()} SDG`, `${c.creditLimit.toLocaleString()} SDG`, `${c.creditUsagePercent}%`],
+                            'customers_credit_report'
+                          )}
+                          className="flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>تصدير PDF</span>
                         </button>
                       </div>
                     </div>
@@ -1603,16 +1923,31 @@ export default function Reports() {
                           />
                         </div>
                         <button 
-                          onClick={() => exportToCSV(
+                          onClick={() => exportToExcelXML(
                             shippingData.orders, 
                             'shipping_logistics_report', 
                             ['رقم الشحنة', 'رقم الفاتورة', 'العميل', 'الولاية', 'المدينة', 'حالة الشحن', 'المندوب / السائق', 'التاريخ'],
-                            (o) => [o.id, o.invoiceId, o.customerName, o.state, o.city, o.status, o.driverName, o.date]
+                            (o) => [o.id, o.invoiceId, o.customerName, o.state, o.city, o.status, o.driverName || '-', o.date],
+                            'تقرير اللوجستيات وحالات شحن الولايات',
+                            `تاريخ التصدير: ${new Date().toLocaleDateString('ar-SA')}`
                           )}
                           className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>تصدير Excel</span>
+                        </button>
+                        <button 
+                          onClick={() => exportPDFGeneral(
+                            shippingData.orders.filter((o: any) => o.customerName.toLowerCase().includes(shippingSearch.toLowerCase()) || o.driverName.toLowerCase().includes(shippingSearch.toLowerCase()) || o.state.toLowerCase().includes(shippingSearch.toLowerCase())),
+                            'تقرير اللوجستيات وحالات شحن الولايات',
+                            ['رقم الشحنة', 'رقم الفاتورة', 'العميل', 'الوجهة', 'حالة الشحن', 'المندوب / السائق', 'التاريخ'],
+                            (o) => [o.id, o.invoiceId, o.customerName, `${o.state} - ${o.city}`, o.status, o.driverName || '-', o.date],
+                            'shipping_logistics_report'
+                          )}
+                          className="flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer w-full sm:w-auto"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>تصدير PDF</span>
                         </button>
                       </div>
                     </div>

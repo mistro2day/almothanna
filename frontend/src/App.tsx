@@ -18,6 +18,7 @@ import Login from './views/Login';
 import SettingsView from './views/Settings';
 import Reports from './views/Reports';
 import InstallmentsCalendar from './views/Calendar';
+import Accounts from './views/Accounts';
 import NotificationsCenter from './components/NotificationsCenter';
 
 
@@ -39,10 +40,11 @@ import {
   X,
   Settings,
   BarChart3,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Coins
 } from 'lucide-react';
 
-type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'settings' | 'reports' | 'calendar';
+type ViewType = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'settings' | 'reports' | 'calendar' | 'accounts';
 
 export default function App() {
   const theme = useThemeStore((state) => state.theme);
@@ -185,6 +187,7 @@ export default function App() {
     { id: 'calendar', label: 'تقويم الدفعات', icon: CalendarIcon },
     { id: 'customers', label: 'العملاء والشحن', icon: UsersRound },
     { id: 'suppliers', label: 'الموردين', icon: Building2 },
+    { id: 'accounts', label: 'الحسابات والمصاريف', icon: Coins },
     { id: 'reports', label: 'التقارير الذكية', icon: BarChart3 },
     { id: 'settings', label: 'الإعدادات', icon: Settings },
   ].filter(item => hasPermission(user, 'page', item.id));
@@ -198,6 +201,7 @@ export default function App() {
       case 'calendar': return <InstallmentsCalendar />;
       case 'customers': return <Customers />;
       case 'suppliers': return <Suppliers />;
+      case 'accounts': return <Accounts />;
       case 'reports': return <Reports />;
       case 'settings': return <SettingsView />;
       default: return <Dashboard />;

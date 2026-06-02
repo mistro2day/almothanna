@@ -49,6 +49,11 @@ export class SalesController {
     return this.salesService.listInstallments();
   }
 
+  @Get(':id')
+  async getSaleById(@Param('id') id: string) {
+    return this.salesService.getSaleById(id);
+  }
+
   @Post('installments/:id/pay')
   async payInstallment(@Param('id') id: string, @Body('amount') amount: number) {
     return this.salesService.payInstallment(id, amount);

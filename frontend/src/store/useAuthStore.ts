@@ -114,6 +114,7 @@ export const getDefaultPermissions = (role: Role): any => {
       suppliers: false,
       reports: false,
       settings: false,
+      accounts: false,
     },
     buttons: {
       inventory: {
@@ -193,6 +194,7 @@ export const getDefaultPermissions = (role: Role): any => {
     base.pages.customers = true;
     base.pages.suppliers = true;
     base.pages.reports = true;
+    base.pages.accounts = true;
     base.buttons.sales.viewProfit = true;
     base.buttons.suppliers.managePayments = true;
   }

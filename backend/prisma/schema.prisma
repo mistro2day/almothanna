@@ -28,6 +28,7 @@ model User {
   permissions   Json?          // Detailed custom user permissions
   activities    Activity[]
   notifications Notification[]
+  expenses      Expense[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -307,5 +308,25 @@ model Notification {
   message   String
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model ExpenseCategory {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+}
+
+model Expense {
+  id          String          @id @default(uuid())
+  amount      Float
+  description String?
+  date        DateTime        @default(now())
+  categoryId  String
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 }
 
