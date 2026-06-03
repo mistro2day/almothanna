@@ -37,7 +37,7 @@ import {
   Cell 
 } from 'recharts';
 
-type TabType = 'sales' | 'inventory' | 'suppliers' | 'customers' | 'shipping' | 'representatives';
+type TabType = 'sales' | 'inventory' | 'suppliers' | 'customers' | 'shipping' | 'representatives' | 'profits';
 
 export default function Reports() {
   const { settings, fetchSettings } = useSettingsStore();
@@ -77,6 +77,17 @@ export default function Reports() {
   const [supplierData, setSupplierData] = useState<any>(null);
   const [customerData, setCustomerData] = useState<any>(null);
   const [shippingData, setShippingData] = useState<any>(null);
+  const [profitsData, setProfitsData] = useState<any>(null);
+
+  // Customer/Supplier statement states
+  const [customerStatementData, setCustomerStatementData] = useState<any>(null);
+  const [supplierStatementData, setSupplierStatementData] = useState<any>(null);
+  const [selectedCustomerForStatement, setSelectedCustomerForStatement] = useState<string>('');
+  const [selectedSupplierForStatement, setSelectedSupplierForStatement] = useState<string>('');
+  const [statementLoading, setStatementLoading] = useState(false);
+
+  // Profits sub-tab
+  const [profitsSubTab, setProfitsSubTab] = useState<'byProduct' | 'byInvoice' | 'byCustomer' | 'byCategory'>('byProduct');
 
   // Compile all sales across all representatives
   const allSales = !salesData ? [] : (salesData.representativesSalesReport || []).reduce((acc: any[], r: any) => {
@@ -129,6 +140,9 @@ export default function Reports() {
       } else if (activeTab === 'shipping') {
         const { data } = await apiClient.get('/reports/shipping', { params });
         setShippingData(data);
+      } else if (activeTab === 'profits') {
+        const { data } = await apiClient.get('/reports/profits', { params });
+        setProfitsData(data);
       }
     } catch (err: any) {
       console.error(err);
@@ -509,9 +523,10 @@ export default function Reports() {
 
         {/* Navigation Tabs */}
         <div className="flex overflow-x-auto gap-2 pb-2 border-b border-[var(--border-color)] print:hidden scrollbar-none flex-nowrap" style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          {(['sales', 'representatives', 'inventory', 'suppliers', 'customers', 'shipping'] as TabType[]).map((tab) => {
+          {(['sales', 'profits', 'representatives', 'inventory', 'suppliers', 'customers', 'shipping'] as TabType[]).map((tab) => {
             const labels = {
               sales: '📈 تقارير المبيعات والأصناف',
+              profits: '💰 تقارير الأرباح',
               representatives: '💼 تقارير وعمولات المناديب',
               inventory: '💊 المخزون الدوائي والصلاحيات',
               suppliers: '🤝 كشوفات الموردين',
@@ -1550,6 +1565,7 @@ export default function Reports() {
                           <th className="py-3 px-4 font-bold">إجمالي المشتريات</th>
                           <th className="py-3 px-4 font-bold">إجمالي المسدد</th>
                           <th className="py-3 px-4 font-bold">الديون القائمة</th>
+                          <th className="py-3 px-4 font-bold">إجراءات</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
@@ -1565,11 +1581,103 @@ export default function Reports() {
                               <td className="py-3.5 px-4 font-mono">{s.totalPurchases.toLocaleString()} SDG</td>
                               <td className="py-3.5 px-4 font-mono text-teal-500">{s.totalPaid.toLocaleString()} SDG</td>
                               <td className="py-3.5 px-4 font-bold font-mono text-rose-500">{s.remainingDebt.toLocaleString()} SDG</td>
+                              <td className="py-3.5 px-4">
+                                <button
+                                  onClick={async () => {
+                                    setSelectedSupplierForStatement(s.id);
+                                    setStatementLoading(true);
+                                    try {
+                                      const params: any = {};
+                                      if (startDate) params.startDate = startDate;
+                                      if (endDate) params.endDate = endDate;
+                                      const { data } = await apiClient.get(`/reports/supplier-statement/${s.id}`, { params });
+                                      setSupplierStatementData(data);
+                                    } catch (e) { console.error(e); }
+                                    finally { setStatementLoading(false); }
+                                  }}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap"
+                                >
+                                  <FileText className="w-3 h-3" />
+                                  كشف حساب
+                                </button>
+                              </td>
                             </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Supplier Statement Details */}
+                  {selectedSupplierForStatement && supplierStatementData && (
+                    <div className="mt-6 glass-card p-5 rounded-2xl space-y-4 border-t-4 border-t-amber-500 animate-fade-in-slide">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="space-y-1">
+                          <h3 className="text-base font-bold text-[var(--text-primary)]">📋 كشف حساب المورد: <span className="text-amber-500">{supplierStatementData.supplierName}</span></h3>
+                          <p className="text-xs text-[var(--text-secondary)]">كشف الحساب التفصيلي يوضح جميع الحركات المالية (له / عليه)</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => exportToExcelXML(
+                              supplierStatementData.entries, `supplier_statement_${supplierStatementData.supplierName}`,
+                              ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
+                              (item: any) => [item.date, item.description, item.debit.toString(), item.credit.toString(), item.balance.toString()],
+                              `كشف حساب المورد: ${supplierStatementData.supplierName}`, `الرصيد النهائي: ${supplierStatementData.finalBalance.toLocaleString()} SDG`
+                            )}
+                            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                          ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
+                          <button 
+                            onClick={() => exportPDFGeneral(
+                              supplierStatementData.entries, `كشف حساب المورد: ${supplierStatementData.supplierName}`,
+                              ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
+                              (item: any) => [item.date, item.description, `${item.debit.toLocaleString()} SDG`, `${item.credit.toLocaleString()} SDG`, `${item.balance.toLocaleString()} SDG`],
+                              `supplier_statement`
+                            )}
+                            className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                          ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
+                          <button 
+                            onClick={() => { setSelectedSupplierForStatement(''); setSupplierStatementData(null); }}
+                            className="flex items-center gap-2 px-3 py-2 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                          >✕ إغلاق</button>
+                        </div>
+                      </div>
+                      {statementLoading ? (
+                        <div className="text-center py-8 text-[var(--text-secondary)]">جاري تحميل كشف الحساب...</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-right border-collapse text-xs">
+                            <thead>
+                              <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                                <th className="py-3 px-4 font-bold">التاريخ</th>
+                                <th className="py-3 px-4 font-bold">البيان</th>
+                                <th className="py-3 px-4 font-bold">له (مدين)</th>
+                                <th className="py-3 px-4 font-bold">عليه (دائن)</th>
+                                <th className="py-3 px-4 font-bold">الرصيد</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                              {(supplierStatementData.entries || []).map((entry: any, idx: number) => (
+                                <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                                  <td className="py-3 px-4 font-mono">{entry.date}</td>
+                                  <td className="py-3 px-4">{entry.description}</td>
+                                  <td className="py-3 px-4 font-mono text-rose-500">{entry.debit > 0 ? `${entry.debit.toLocaleString()} SDG` : '-'}</td>
+                                  <td className="py-3 px-4 font-mono text-emerald-500">{entry.credit > 0 ? `${entry.credit.toLocaleString()} SDG` : '-'}</td>
+                                  <td className="py-3 px-4 font-bold font-mono">{entry.balance.toLocaleString()} SDG</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="border-t-2 border-[var(--border-color)] font-bold bg-[var(--border-color)]/10">
+                                <td className="py-3 px-4" colSpan={2}>الرصيد النهائي</td>
+                                <td className="py-3 px-4 font-mono text-rose-500">{(supplierStatementData.totalDebit || 0).toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-mono text-emerald-500">{(supplierStatementData.totalCredit || 0).toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-mono text-lg">{(supplierStatementData.finalBalance || 0).toLocaleString()} SDG</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1735,6 +1843,7 @@ export default function Reports() {
                             <th className="py-2.5 px-3 font-bold">المديونية الحالية</th>
                             <th className="py-2.5 px-3 font-bold">سقف الائتمان</th>
                             <th className="py-2.5 px-3 font-bold">نسبة استهلاك السقف</th>
+                            <th className="py-2.5 px-3 font-bold">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
@@ -1758,11 +1867,103 @@ export default function Reports() {
                                     <span className="font-bold font-mono text-[10px] w-8">{c.creditUsagePercent}%</span>
                                   </div>
                                 </td>
+                                <td className="py-3 px-3">
+                                  <button
+                                    onClick={async () => {
+                                      setSelectedCustomerForStatement(c.id);
+                                      setStatementLoading(true);
+                                      try {
+                                        const params: any = {};
+                                        if (startDate) params.startDate = startDate;
+                                        if (endDate) params.endDate = endDate;
+                                        const { data } = await apiClient.get(`/reports/customer-statement/${c.id}`, { params });
+                                        setCustomerStatementData(data);
+                                      } catch (e) { console.error(e); }
+                                      finally { setStatementLoading(false); }
+                                    }}
+                                    className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap"
+                                  >
+                                    <FileText className="w-3 h-3" />
+                                    كشف حساب
+                                  </button>
+                                </td>
                               </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+
+                    {/* Customer Statement Details */}
+                    {selectedCustomerForStatement && customerStatementData && (
+                      <div className="mt-6 glass-card p-5 rounded-2xl space-y-4 border-t-4 border-t-indigo-500 animate-fade-in-slide">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                          <div className="space-y-1">
+                            <h3 className="text-base font-bold text-[var(--text-primary)]">📋 كشف حساب العميل: <span className="text-indigo-500">{customerStatementData.customer.name}</span></h3>
+                            <p className="text-xs text-[var(--text-secondary)]">كشف الحساب التفصيلي يوضح جميع الحركات المالية (له / عليه)</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => exportToExcelXML(
+                                customerStatementData.entries, `customer_statement_${customerStatementData.customer.name}`,
+                                ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
+                                (item: any) => [item.date, item.description, item.debit.toString(), item.credit.toString(), item.balance.toString()],
+                                `كشف حساب العميل: ${customerStatementData.customer.name}`, `الرصيد النهائي: ${customerStatementData.summary.finalBalance.toLocaleString()} SDG`
+                              )}
+                              className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                            ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
+                            <button 
+                              onClick={() => exportPDFGeneral(
+                                customerStatementData.entries, `كشف حساب العميل: ${customerStatementData.customerName}`,
+                                ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
+                                (item: any) => [item.date, item.description, `${item.debit.toLocaleString()} SDG`, `${item.credit.toLocaleString()} SDG`, `${item.balance.toLocaleString()} SDG`],
+                                `customer_statement`
+                              )}
+                              className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                            ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
+                            <button 
+                              onClick={() => { setSelectedCustomerForStatement(''); setCustomerStatementData(null); }}
+                              className="flex items-center gap-2 px-3 py-2 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                            >✕ إغلاق</button>
+                          </div>
+                        </div>
+                        {statementLoading ? (
+                          <div className="text-center py-8 text-[var(--text-secondary)]">جاري تحميل كشف الحساب...</div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-right border-collapse text-xs">
+                              <thead>
+                                <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                                  <th className="py-3 px-4 font-bold">التاريخ</th>
+                                  <th className="py-3 px-4 font-bold">البيان</th>
+                                  <th className="py-3 px-4 font-bold">له (مدين)</th>
+                                  <th className="py-3 px-4 font-bold">عليه (دائن)</th>
+                                  <th className="py-3 px-4 font-bold">الرصيد</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                                {(customerStatementData.entries || []).map((entry: any, idx: number) => (
+                                  <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                                    <td className="py-3 px-4 font-mono">{entry.date}</td>
+                                    <td className="py-3 px-4">{entry.description}</td>
+                                    <td className="py-3 px-4 font-mono text-rose-500">{entry.debit > 0 ? `${entry.debit.toLocaleString()} SDG` : '-'}</td>
+                                    <td className="py-3 px-4 font-mono text-emerald-500">{entry.credit > 0 ? `${entry.credit.toLocaleString()} SDG` : '-'}</td>
+                                    <td className="py-3 px-4 font-bold font-mono">{entry.balance.toLocaleString()} SDG</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="border-t-2 border-[var(--border-color)] font-bold bg-[var(--border-color)]/10">
+                                  <td className="py-3 px-4" colSpan={2}>الرصيد النهائي</td>
+                                  <td className="py-3 px-4 font-mono text-rose-500">{(customerStatementData.summary?.totalDebit || 0).toLocaleString()} SDG</td>
+                                  <td className="py-3 px-4 font-mono text-emerald-500">{(customerStatementData.summary?.totalCredit || 0).toLocaleString()} SDG</td>
+                                  <td className="py-3 px-4 font-mono text-lg">{(customerStatementData.summary?.finalBalance || 0).toLocaleString()} SDG</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1994,6 +2195,323 @@ export default function Reports() {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* 6. PROFITS TAB CONTENT */}
+            {activeTab === 'profits' && profitsData && (
+              <div className="space-y-6 animate-fade-in-slide">
+                {/* Date Filters for Profits */}
+                <div className="glass-card p-4 rounded-2xl border border-[var(--border-color)]/60 bg-[var(--bg-secondary)]/30 print:hidden animate-fade-in-slide space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-[var(--text-primary)]">📅 تصفية تقرير الأرباح بنطاق التاريخ:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => applyPreset('today')} className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer">اليوم</button>
+                      <button onClick={() => applyPreset('week')} className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer">آخر 7 أيام</button>
+                      <button onClick={() => applyPreset('month')} className="px-2.5 py-1.5 rounded-lg text-[10px] bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white font-bold transition-all cursor-pointer">الشهر الحالي</button>
+                      <button onClick={() => applyPreset('clear')} className="px-2.5 py-1.5 rounded-lg text-[10px] bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-bold transition-all cursor-pointer">تصفير التصفية</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ البدء</label>
+                      <DatePicker value={startDate} onChange={setStartDate} placeholder="اختر تاريخ البداية" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[var(--text-secondary)] font-semibold block">تاريخ النهاية</label>
+                      <DatePicker value={endDate} onChange={setEndDate} placeholder="اختر تاريخ النهاية" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profits Stats Summary */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-emerald-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">إجمالي الإيرادات</span>
+                      <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">{(profitsData.summary.totalRevenue || 0).toLocaleString()} SDG</h3>
+                    </div>
+                    <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl"><TrendingUp className="w-5 h-5" /></div>
+                  </div>
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-blue-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">إجمالي التكلفة</span>
+                      <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">{(profitsData.summary.totalCost || 0).toLocaleString()} SDG</h3>
+                    </div>
+                    <div className="p-3 bg-blue-500/10 text-blue-500 rounded-xl"><DollarSign className="w-5 h-5" /></div>
+                  </div>
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-teal-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">صافي الأرباح</span>
+                      <h3 className="text-xl font-bold font-mono text-emerald-500">{(profitsData.summary.totalProfit || 0).toLocaleString()} SDG</h3>
+                    </div>
+                    <div className="p-3 bg-teal-500/10 text-teal-500 rounded-xl"><TrendingUp className="w-5 h-5" /></div>
+                  </div>
+                  <div className="glass-card p-5 rounded-2xl border-r-4 border-r-amber-500 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">هامش الربح %</span>
+                      <h3 className="text-xl font-bold font-mono text-[var(--text-primary)]">{profitsData.summary.margin || 0}%</h3>
+                    </div>
+                    <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl"><BarChart3 className="w-5 h-5" /></div>
+                  </div>
+                </div>
+
+                {/* Profits Sub-tabs */}
+                <div className="flex gap-2 border-b border-[var(--border-color)] pb-px">
+                  {([
+                    { key: 'byProduct', label: '📦 الأرباح حسب الصنف' },
+                    { key: 'byInvoice', label: '🧾 الأرباح حسب الفاتورة' },
+                    { key: 'byCustomer', label: '👤 الأرباح حسب العميل' },
+                    { key: 'byCategory', label: '🏷️ الأرباح حسب التصنيف' },
+                  ] as { key: typeof profitsSubTab; label: string }[]).map((st) => (
+                    <button
+                      key={st.key}
+                      onClick={() => setProfitsSubTab(st.key)}
+                      className={`pb-2.5 px-4 font-bold text-xs sm:text-sm transition-all border-b-2 cursor-pointer ${
+                        profitsSubTab === st.key
+                          ? 'border-emerald-500 text-emerald-500'
+                          : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Profits by Product */}
+                {profitsSubTab === 'byProduct' && (
+                  <div className="glass-card p-5 rounded-2xl space-y-4 text-right animate-fade-in-slide">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-1">
+                        <h3 className="text-base font-bold text-[var(--text-primary)]">📦 تقرير الأرباح حسب الصنف الدوائي</h3>
+                        <p className="text-xs text-[var(--text-secondary)]">تحليل الإيرادات والتكلفة والأرباح لكل صنف دوائي</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => exportToExcelXML(
+                            profitsData.profitsByProduct, 'profits_by_product',
+                            ['اسم الصنف', 'الكمية', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.productName, item.qty.toString(), item.revenue.toString(), item.cost.toString(), item.profit.toString()],
+                            'تقرير الأرباح حسب الصنف', `صافي الأرباح الكلي: ${profitsData.summary.totalProfit.toLocaleString()} SDG`
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
+                        <button 
+                          onClick={() => exportPDFGeneral(
+                            profitsData.profitsByProduct, 'تقرير الأرباح حسب الصنف',
+                            ['اسم الصنف', 'الكمية المباعة', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.productName, `${item.qty} وحدة`, `${item.revenue.toLocaleString()} SDG`, `${item.cost.toLocaleString()} SDG`, `${item.profit.toLocaleString()} SDG`],
+                            'profits_by_product'
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                            <th className="py-3 px-4 font-bold">#</th>
+                            <th className="py-3 px-4 font-bold">اسم الصنف</th>
+                            <th className="py-3 px-4 font-bold">الكمية المباعة</th>
+                            <th className="py-3 px-4 font-bold">إجمالي الإيرادات</th>
+                            <th className="py-3 px-4 font-bold">إجمالي التكلفة</th>
+                            <th className="py-3 px-4 font-bold">صافي الربح</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                          {(profitsData.profitsByProduct || []).map((item: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
+                              <td className="py-3 px-4 font-bold">{item.productName}</td>
+                              <td className="py-3 px-4 font-mono">{item.qty.toLocaleString()} وحدة</td>
+                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Profits by Invoice */}
+                {profitsSubTab === 'byInvoice' && (
+                  <div className="glass-card p-5 rounded-2xl space-y-4 text-right animate-fade-in-slide">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-1">
+                        <h3 className="text-base font-bold text-[var(--text-primary)]">🧾 تقرير الأرباح حسب رقم الفاتورة</h3>
+                        <p className="text-xs text-[var(--text-secondary)]">عرض الأرباح المحققة من كل فاتورة</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => exportToExcelXML(
+                            profitsData.profitsByInvoice, 'profits_by_invoice',
+                            ['رقم الفاتورة', 'التاريخ', 'العميل', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.invoiceId, item.date, item.customerName, item.revenue.toString(), item.cost.toString(), item.profit.toString()],
+                            'تقرير الأرباح حسب الفاتورة', `صافي الأرباح الكلي: ${profitsData.summary.totalProfit.toLocaleString()} SDG`
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
+                        <button 
+                          onClick={() => exportPDFGeneral(
+                            profitsData.profitsByInvoice, 'تقرير الأرباح حسب الفاتورة',
+                            ['رقم الفاتورة', 'التاريخ', 'العميل', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.invoiceId, item.date, item.customerName, `${item.revenue.toLocaleString()} SDG`, `${item.cost.toLocaleString()} SDG`, `${item.profit.toLocaleString()} SDG`],
+                            'profits_by_invoice'
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                            <th className="py-3 px-4 font-bold">#</th>
+                            <th className="py-3 px-4 font-bold">رقم الفاتورة</th>
+                            <th className="py-3 px-4 font-bold">التاريخ</th>
+                            <th className="py-3 px-4 font-bold">العميل</th>
+                            <th className="py-3 px-4 font-bold">الإيرادات</th>
+                            <th className="py-3 px-4 font-bold">التكلفة</th>
+                            <th className="py-3 px-4 font-bold">صافي الربح</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                          {(profitsData.profitsByInvoice || []).map((item: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
+                              <td className="py-3 px-4 font-mono font-bold text-indigo-500">{item.invoiceId}</td>
+                              <td className="py-3 px-4 font-mono">{item.date}</td>
+                              <td className="py-3 px-4 font-bold">{item.customerName}</td>
+                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Profits by Customer */}
+                {profitsSubTab === 'byCustomer' && (
+                  <div className="glass-card p-5 rounded-2xl space-y-4 text-right animate-fade-in-slide">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-1">
+                        <h3 className="text-base font-bold text-[var(--text-primary)]">👤 تقرير الأرباح حسب العميل</h3>
+                        <p className="text-xs text-[var(--text-secondary)]">تحليل الأرباح المحققة من كل عميل</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => exportToExcelXML(
+                            profitsData.profitsByCustomer, 'profits_by_customer',
+                            ['اسم العميل', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.customerName, item.revenue.toString(), item.cost.toString(), item.profit.toString()],
+                            'تقرير الأرباح حسب العميل', `صافي الأرباح الكلي: ${profitsData.summary.totalProfit.toLocaleString()} SDG`
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
+                        <button 
+                          onClick={() => exportPDFGeneral(
+                            profitsData.profitsByCustomer, 'تقرير الأرباح حسب العميل',
+                            ['اسم العميل', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.customerName, `${item.revenue.toLocaleString()} SDG`, `${item.cost.toLocaleString()} SDG`, `${item.profit.toLocaleString()} SDG`],
+                            'profits_by_customer'
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                            <th className="py-3 px-4 font-bold">#</th>
+                            <th className="py-3 px-4 font-bold">اسم العميل</th>
+                            <th className="py-3 px-4 font-bold">إجمالي الإيرادات</th>
+                            <th className="py-3 px-4 font-bold">إجمالي التكلفة</th>
+                            <th className="py-3 px-4 font-bold">صافي الربح</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                          {(profitsData.profitsByCustomer || []).map((item: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
+                              <td className="py-3 px-4 font-bold">{item.customerName}</td>
+                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Profits by Category */}
+                {profitsSubTab === 'byCategory' && (
+                  <div className="glass-card p-5 rounded-2xl space-y-4 text-right animate-fade-in-slide">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-1">
+                        <h3 className="text-base font-bold text-[var(--text-primary)]">🏷️ تقرير الأرباح حسب التصنيف</h3>
+                        <p className="text-xs text-[var(--text-secondary)]">تحليل الأرباح المحققة لكل تصنيف دوائي</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => exportToExcelXML(
+                            profitsData.profitsByCategory, 'profits_by_category',
+                            ['التصنيف', 'الكمية', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.category, item.qty.toString(), item.revenue.toString(), item.cost.toString(), item.profit.toString()],
+                            'تقرير الأرباح حسب التصنيف', `صافي الأرباح الكلي: ${profitsData.summary.totalProfit.toLocaleString()} SDG`
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
+                        <button 
+                          onClick={() => exportPDFGeneral(
+                            profitsData.profitsByCategory, 'تقرير الأرباح حسب التصنيف',
+                            ['التصنيف', 'الكمية', 'الإيرادات', 'التكلفة', 'صافي الربح'],
+                            (item: any) => [item.category, `${item.qty} وحدة`, `${item.revenue.toLocaleString()} SDG`, `${item.cost.toLocaleString()} SDG`, `${item.profit.toLocaleString()} SDG`],
+                            'profits_by_category'
+                          )}
+                          className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                        ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
+                            <th className="py-3 px-4 font-bold">#</th>
+                            <th className="py-3 px-4 font-bold">التصنيف</th>
+                            <th className="py-3 px-4 font-bold">الكمية المباعة</th>
+                            <th className="py-3 px-4 font-bold">الإيرادات</th>
+                            <th className="py-3 px-4 font-bold">التكلفة</th>
+                            <th className="py-3 px-4 font-bold">صافي الربح</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                          {(profitsData.profitsByCategory || []).map((item: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
+                              <td className="py-3 px-4 font-bold"><span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500">{item.category}</span></td>
+                              <td className="py-3 px-4 font-mono">{item.qty.toLocaleString()} وحدة</td>
+                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             

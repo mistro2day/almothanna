@@ -5,7 +5,13 @@ import { PrismaService } from '../prisma.service';
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSalesReport(startDate?: string, endDate?: string) {
+  async getSalesReport(
+    startDate?: string,
+    endDate?: string,
+    representativeId?: string,
+    categoryId?: string,
+    paymentType?: string,
+  ) {
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.createdAt = {};
@@ -17,6 +23,7 @@ export class ReportsService {
       where: {
         ...dateFilter,
         status: { not: 'CANCELLED' },
+        ...(representativeId ? { representativeId } : {}),
       },
       include: {
         customer: true,
@@ -42,34 +49,33 @@ export class ReportsService {
       PENDING: 0,
     };
 
-    // Sales by product/item (التقارير حسب الصنف)
-    const productSalesMap: Record<string, {
-      productId: string;
-      productName: string;
-      scientificName: string;
-      category: string;
-      qtySold: number;
-      revenue: number;
-      cost: number;
-      profit: number;
-    }> = {};
-
+    // Sales by product/item
+    const productSalesMap: Record<string, any> = {};
+    // Sales by Category
+    const categorySalesMap: Record<string, any> = {};
     // Representatives sales & commission map
-    const representativesSalesMap: Record<string, {
-      id: string;
-      name: string;
-      phone: string;
-      commissionRate: number;
-      totalSales: number;
-      totalPaid: number;
-      totalCommission: number;
-      salesCount: number;
-      sales: any[];
-    }> = {};
+    const representativesSalesMap: Record<string, any> = {};
 
     let totalRepresentativeCommissions = 0;
 
-    for (const sale of sales) {
+    const filteredSales = sales.filter((sale) => {
+      // Filter by paymentType
+      if (paymentType === 'CASH') {
+        if (sale.paid < sale.total) return false;
+      } else if (paymentType === 'CREDIT') {
+        if (sale.paid >= sale.total) return false;
+      }
+
+      // Filter by category
+      if (categoryId) {
+        const hasCategory = sale.items.some(item => item.product.category === categoryId);
+        if (!hasCategory) return false;
+      }
+
+      return true;
+    });
+
+    for (const sale of filteredSales) {
       totalRevenue += sale.total;
       totalPaid += sale.paid;
       totalUnpaid += Math.max(0, sale.total - sale.paid);
@@ -104,6 +110,22 @@ export class ReportsService {
         productSalesMap[pid].revenue += itemRevenue;
         productSalesMap[pid].cost += itemCost;
         productSalesMap[pid].profit += itemProfit;
+
+        // Group by category
+        const cat = item.product.category ?? 'عام';
+        if (!categorySalesMap[cat]) {
+          categorySalesMap[cat] = {
+            category: cat,
+            qtySold: 0,
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+          };
+        }
+        categorySalesMap[cat].qtySold += item.qty;
+        categorySalesMap[cat].revenue += itemRevenue;
+        categorySalesMap[cat].cost += itemCost;
+        categorySalesMap[cat].profit += itemProfit;
       }
 
       // Populate representative report
@@ -144,6 +166,7 @@ export class ReportsService {
 
     const totalProfit = totalRevenue - totalCost;
     const itemsSalesReport = Object.values(productSalesMap).sort((a, b) => b.revenue - a.revenue);
+    const categorySalesReport = Object.values(categorySalesMap).sort((a, b) => b.revenue - a.revenue);
     const representativesSalesReport = Object.values(representativesSalesMap).map(rep => ({
       ...rep,
       totalSales: Math.round(rep.totalSales),
@@ -151,14 +174,14 @@ export class ReportsService {
       totalCommission: Math.round(rep.totalCommission),
     })).sort((a, b) => b.totalSales - a.totalSales);
 
-    // Monthly trends for chart
+    // Monthly trends
     const monthlyMap: Record<string, { month: string; sales: number; profit: number }> = {};
     const monthNames = [
       'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
       'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
     ];
 
-    for (const sale of sales) {
+    for (const sale of filteredSales) {
       const d = new Date(sale.createdAt);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const label = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
@@ -192,7 +215,7 @@ export class ReportsService {
         totalPaid: Math.round(totalPaid),
         totalUnpaid: Math.round(totalUnpaid),
         profitMargin: totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0,
-        invoiceCount: sales.length,
+        invoiceCount: filteredSales.length,
         totalRepresentativeCommissions: Math.round(totalRepresentativeCommissions),
       },
       statusDistribution: [
@@ -201,8 +224,17 @@ export class ReportsService {
         { name: 'معلقة', value: statusCounts.PENDING, color: '#ef4444' },
       ],
       itemsSalesReport,
+      categorySalesReport,
       monthlyTrends,
       representativesSalesReport,
+      sales: filteredSales.map(s => ({
+        id: s.id,
+        createdAt: s.createdAt.toISOString(),
+        customerName: s.customer.name,
+        total: Math.round(s.total),
+        paid: Math.round(s.paid),
+        status: s.status,
+      }))
     };
   }
 
@@ -221,7 +253,6 @@ export class ReportsService {
     let lowStockCount = 0;
     
     const today = new Date();
-    const threeMonthsAgo = new Date();
     const threeMonthsFromNow = new Date();
     threeMonthsFromNow.setMonth(today.getMonth() + 3);
 
@@ -239,7 +270,6 @@ export class ReportsService {
 
         const expiryDate = new Date(batch.expiryDate);
 
-        // Check if expired or near expiry
         if (expiryDate <= today) {
           expiredBatchesList.push({
             id: batch.id,
@@ -285,7 +315,6 @@ export class ReportsService {
         color: ['#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899'][i % 7],
       }));
 
-    // Fetch last 15 stock movements for reference
     const recentMovements = await this.prisma.stockMovement.findMany({
       take: 15,
       orderBy: { createdAt: 'desc' },
@@ -437,7 +466,6 @@ export class ReportsService {
       };
     }).sort((a, b) => b.totalSales - a.totalSales);
 
-    // Distribution of sales by state (الولايات الأكثر شراءً)
     const stateSalesMap: Record<string, { name: string; sales: number; customers: number }> = {};
     for (const c of customersReport) {
       const st = c.state || 'غير محدد';
@@ -545,6 +573,306 @@ export class ReportsService {
       statusDistribution: statusReport,
       stateDistribution,
       orders: ordersList,
+    };
+  }
+
+  async getCustomerStatement(customerId: string, startDate?: string, endDate?: string) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+    });
+    if (!customer) throw new Error('العميل غير موجود');
+
+    const sales = await this.prisma.sale.findMany({
+      where: {
+        customerId,
+        status: { not: 'CANCELLED' },
+      },
+      include: {
+        returns: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const ledgerEntries: any[] = [];
+
+    for (const sale of sales) {
+      ledgerEntries.push({
+        date: sale.createdAt.toISOString().split('T')[0],
+        description: `فاتورة مبيعات رقم ${sale.id}`,
+        debit: sale.total,
+        credit: 0,
+        ref: sale.id,
+        createdAt: sale.createdAt,
+      });
+
+      if (sale.paid > 0) {
+        ledgerEntries.push({
+          date: sale.createdAt.toISOString().split('T')[0],
+          description: `سداد دفعة للفاتورة رقم ${sale.id}`,
+          debit: 0,
+          credit: sale.paid,
+          ref: sale.id,
+          createdAt: sale.createdAt,
+        });
+      }
+
+      for (const ret of sale.returns) {
+        ledgerEntries.push({
+          date: ret.createdAt.toISOString().split('T')[0],
+          description: `مرتجع مبيعات للفاتورة رقم ${sale.id}`,
+          debit: 0,
+          credit: ret.totalRefund,
+          ref: ret.id,
+          createdAt: ret.createdAt,
+        });
+      }
+    }
+
+    ledgerEntries.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    let filteredEntries = ledgerEntries;
+    if (startDate || endDate) {
+      filteredEntries = ledgerEntries.filter(entry => {
+        const d = new Date(entry.date);
+        if (startDate && d < new Date(startDate)) return false;
+        if (endDate && d > new Date(endDate)) return false;
+        return true;
+      });
+    }
+
+    let runningBalance = 0;
+    const ledgerWithBalance = filteredEntries.map((entry) => {
+      runningBalance += entry.debit - entry.credit;
+      return {
+        ...entry,
+        balance: runningBalance,
+      };
+    });
+
+    return {
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone,
+        type: customer.type === 'Pharmacy' ? 'صيدلية' : customer.type === 'Hospital' ? 'مستشفى' : 'موزع',
+        creditLimit: customer.creditLimit,
+        state: customer.state,
+      },
+      entries: ledgerWithBalance,
+      summary: {
+        totalDebit: ledgerWithBalance.reduce((sum, e) => sum + e.debit, 0),
+        totalCredit: ledgerWithBalance.reduce((sum, e) => sum + e.credit, 0),
+        finalBalance: runningBalance,
+      }
+    };
+  }
+
+  async getSupplierStatement(supplierId: string, startDate?: string, endDate?: string) {
+    const supplier = await this.prisma.supplier.findUnique({
+      where: { id: supplierId },
+    });
+    if (!supplier) throw new Error('المورد غير موجود');
+
+    const purchaseOrders = await this.prisma.purchaseOrder.findMany({
+      where: {
+        supplierId,
+        status: { not: 'CANCELLED' },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const payments = await this.prisma.supplierPayment.findMany({
+      where: {
+        supplierId,
+      },
+      orderBy: { paidAt: 'asc' },
+    });
+
+    const ledgerEntries: any[] = [];
+
+    for (const po of purchaseOrders) {
+      ledgerEntries.push({
+        date: po.createdAt.toISOString().split('T')[0],
+        description: `فاتورة مشتريات رقم ${po.orderNumber}`,
+        debit: 0,
+        credit: po.total,
+        ref: po.orderNumber,
+        createdAt: po.createdAt,
+      });
+    }
+
+    for (const p of payments) {
+      ledgerEntries.push({
+        date: p.paidAt.toISOString().split('T')[0],
+        description: `سند صرف للمورد - مرجع: ${p.reference || '-'}`,
+        debit: p.amount,
+        credit: 0,
+        ref: p.id,
+        createdAt: p.paidAt,
+      });
+    }
+
+    ledgerEntries.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    let filteredEntries = ledgerEntries;
+    if (startDate || endDate) {
+      filteredEntries = ledgerEntries.filter(entry => {
+        const d = new Date(entry.date);
+        if (startDate && d < new Date(startDate)) return false;
+        if (endDate && d > new Date(endDate)) return false;
+        return true;
+      });
+    }
+
+    let runningBalance = 0;
+    const ledgerWithBalance = filteredEntries.map((entry) => {
+      runningBalance += entry.credit - entry.debit;
+      return {
+        ...entry,
+        balance: runningBalance,
+      };
+    });
+
+    return {
+      supplier: {
+        id: supplier.id,
+        name: supplier.name,
+        phone: supplier.phone,
+        companyName: supplier.companyName,
+      },
+      entries: ledgerWithBalance,
+      summary: {
+        totalDebit: ledgerWithBalance.reduce((sum, e) => sum + e.debit, 0),
+        totalCredit: ledgerWithBalance.reduce((sum, e) => sum + e.credit, 0),
+        finalBalance: runningBalance,
+      }
+    };
+  }
+
+  async getProfitsReport(startDate?: string, endDate?: string, customerId?: string, categoryId?: string) {
+    const dateFilter: any = {};
+    if (startDate || endDate) {
+      dateFilter.createdAt = {};
+      if (startDate) dateFilter.createdAt.gte = new Date(startDate);
+      if (endDate) dateFilter.createdAt.lte = new Date(endDate);
+    }
+
+    const sales = await this.prisma.sale.findMany({
+      where: {
+        ...dateFilter,
+        status: { not: 'CANCELLED' },
+        ...(customerId ? { customerId } : {}),
+      },
+      include: {
+        customer: true,
+        items: {
+          include: {
+            product: true,
+            batch: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const profitsByInvoice: any[] = [];
+    const productProfitsMap: Record<string, any> = {};
+    const customerProfitsMap: Record<string, any> = {};
+    const categoryProfitsMap: Record<string, any> = {};
+
+    let totalRevenue = 0;
+    let totalCost = 0;
+    let totalProfit = 0;
+
+    for (const sale of sales) {
+      let saleCost = 0;
+      let saleRevenue = 0;
+
+      for (const item of sale.items) {
+        if (categoryId && item.product.category !== categoryId) {
+          continue;
+        }
+
+        const costPrice = item.batch?.costPrice ?? 0;
+        const itemCost = item.qty * costPrice;
+        const itemRevenue = item.qty * item.price;
+        const itemProfit = itemRevenue - itemCost;
+
+        saleCost += itemCost;
+        saleRevenue += itemRevenue;
+
+        const pid = item.productId;
+        if (!productProfitsMap[pid]) {
+          productProfitsMap[pid] = {
+            productName: item.product.name,
+            qty: 0,
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+          };
+        }
+        productProfitsMap[pid].qty += item.qty;
+        productProfitsMap[pid].revenue += itemRevenue;
+        productProfitsMap[pid].cost += itemCost;
+        productProfitsMap[pid].profit += itemProfit;
+
+        const cat = item.product.category ?? 'عام';
+        if (!categoryProfitsMap[cat]) {
+          categoryProfitsMap[cat] = {
+            category: cat,
+            qty: 0,
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+          };
+        }
+        categoryProfitsMap[cat].qty += item.qty;
+        categoryProfitsMap[cat].revenue += itemRevenue;
+        categoryProfitsMap[cat].cost += itemCost;
+        categoryProfitsMap[cat].profit += itemProfit;
+      }
+
+      const saleProfit = saleRevenue - saleCost;
+      if (saleRevenue === 0 && sale.items.length > 0) continue;
+
+      totalRevenue += saleRevenue;
+      totalCost += saleCost;
+      totalProfit += saleProfit;
+
+      profitsByInvoice.push({
+        invoiceId: sale.id,
+        date: sale.createdAt.toISOString().split('T')[0],
+        customerName: sale.customer.name,
+        revenue: saleRevenue,
+        cost: saleCost,
+        profit: saleProfit,
+      });
+
+      const cid = sale.customerId;
+      if (!customerProfitsMap[cid]) {
+        customerProfitsMap[cid] = {
+          customerName: sale.customer.name,
+          revenue: 0,
+          cost: 0,
+          profit: 0,
+        };
+      }
+      customerProfitsMap[cid].revenue += saleRevenue;
+      customerProfitsMap[cid].cost += saleCost;
+      customerProfitsMap[cid].profit += saleProfit;
+    }
+
+    return {
+      summary: {
+        totalRevenue: Math.round(totalRevenue),
+        totalCost: Math.round(totalCost),
+        totalProfit: Math.round(totalProfit),
+        margin: totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0,
+      },
+      profitsByInvoice,
+      profitsByProduct: Object.values(productProfitsMap).sort((a: any, b: any) => b.profit - a.profit),
+      profitsByCustomer: Object.values(customerProfitsMap).sort((a: any, b: any) => b.profit - a.profit),
+      profitsByCategory: Object.values(categoryProfitsMap).sort((a: any, b: any) => b.profit - a.profit),
     };
   }
 }

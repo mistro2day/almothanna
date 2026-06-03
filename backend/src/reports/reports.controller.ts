@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Param } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
@@ -9,8 +9,11 @@ export class ReportsController {
   async getSalesReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('representativeId') representativeId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('paymentType') paymentType?: string,
   ) {
-    return this.reportsService.getSalesReport(startDate, endDate);
+    return this.reportsService.getSalesReport(startDate, endDate, representativeId, categoryId, paymentType);
   }
 
   @Get('inventory')
@@ -41,4 +44,33 @@ export class ReportsController {
   ) {
     return this.reportsService.getShippingReport(startDate, endDate);
   }
+
+  @Get('customer-statement/:customerId')
+  async getCustomerStatement(
+    @Param('customerId') customerId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.reportsService.getCustomerStatement(customerId, startDate, endDate);
+  }
+
+  @Get('supplier-statement/:supplierId')
+  async getSupplierStatement(
+    @Param('supplierId') supplierId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.reportsService.getSupplierStatement(supplierId, startDate, endDate);
+  }
+
+  @Get('profits')
+  async getProfitsReport(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('customerId') customerId?: string,
+    @Query('categoryId') categoryId?: string,
+  ) {
+    return this.reportsService.getProfitsReport(startDate, endDate, customerId, categoryId);
+  }
 }
+
