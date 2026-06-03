@@ -105,7 +105,7 @@ export class ReturnsService {
         },
       });
 
-      // 2. تحديث المخزون وحركات المستودع لكل صنف مرتجع
+      // 2. تحديث المخزون وحركات المستودع وتعديل كميات الفاتورة الأصلية لكل صنف مرتجع
       for (const item of validatedItems) {
         // زيادة كمية التشغيلة
         await tx.batch.update({
@@ -126,6 +126,29 @@ export class ReturnsService {
             reason: 'Customer Return',
           },
         });
+
+        // تعديل كمية الصنف في الفاتورة الأصلية
+        const saleItem = sale.items.find(
+          (si) => si.productId === item.productId && si.batchId === item.batchId
+        );
+        if (saleItem) {
+          if (saleItem.qty === item.qty) {
+            // حذف الصنف نهائياً من الفاتورة في حال إرجاع كامل كميته
+            await tx.saleItem.delete({
+              where: { id: saleItem.id },
+            });
+          } else {
+            // إنقاص الكمية المرتجعة من كمية الصنف بالفاتورة
+            await tx.saleItem.update({
+              where: { id: saleItem.id },
+              data: {
+                qty: {
+                  decrement: item.qty,
+                },
+              },
+            });
+          }
+        }
       }
 
       // 3. التعديلات المالية على الفاتورة

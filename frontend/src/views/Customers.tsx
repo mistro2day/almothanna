@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useSalesStore, Customer } from '../store/useSalesStore';
 import { useActivityStore } from '../store/useActivityStore';
 import { useRepresentativesStore, Representative } from '../store/useRepresentativesStore';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { apiClient } from '../api/apiClient';
 import { 
   Users, 
   MapPin, 
@@ -22,7 +24,10 @@ import {
   Download,
   X,
   FileText,
-  ExternalLink
+  ExternalLink,
+  ArrowRight,
+  FileSpreadsheet,
+  AlertCircle
 } from 'lucide-react';
 
 type TabType = 'customers' | 'shipping' | 'representatives';
@@ -30,6 +35,7 @@ type TabType = 'customers' | 'shipping' | 'representatives';
 export default function Customers() {
   const { customers, addCustomer, updateCustomer } = useSalesStore();
   const { representatives, addRepresentative, updateRepresentative, deleteRepresentative } = useRepresentativesStore();
+  const { settings, fetchSettings } = useSettingsStore();
   
   const [activeTab, setActiveTab] = useState<TabType>('customers');
   const [search, setSearch] = useState('');
@@ -38,6 +44,36 @@ export default function Customers() {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  // Statement View state
+  const [selectedCustomerForView, setSelectedCustomerForView] = useState<Customer | null>(null);
+  const [customerInvoices, setCustomerInvoices] = useState<any[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+
+  React.useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  React.useEffect(() => {
+    if (!selectedCustomerForView) {
+      setCustomerInvoices([]);
+      return;
+    }
+    const fetchCustomerInvoices = async () => {
+      setLoadingInvoices(true);
+      try {
+        const { data } = await apiClient.get<any[]>('/sales');
+        // Filter invoices for this customer
+        const filtered = data.filter(inv => inv.customerId === selectedCustomerForView.id);
+        setCustomerInvoices(filtered);
+      } catch (err) {
+        console.error('Error fetching customer invoices:', err);
+      } finally {
+        setLoadingInvoices(false);
+      }
+    };
+    fetchCustomerInvoices();
+  }, [selectedCustomerForView]);
 
   React.useEffect(() => {
     setCurrentPage(1);
@@ -380,10 +416,675 @@ export default function Customers() {
     document.body.removeChild(link);
   };
 
+  const exportStatementToExcel = (customer: Customer, invoicesList: any[]) => {
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyAddress = settings?.address || "";
+    const companyPhone = settings?.phone || "";
+    let contactInfo = "";
+    if (companyAddress) contactInfo += "العنوان: " + companyAddress;
+    if (companyPhone) contactInfo += (contactInfo ? " | " : "") + "الهاتف: " + companyPhone;
+
+    const headers = ['رقم الفاتورة', 'تاريخ الفاتورة', 'إجمالي الفاتورة (SDG)', 'المسدد (SDG)', 'المتبقي (SDG)', 'الحالة', 'المندوب'];
+    const totalSales = invoicesList.reduce((sum, inv) => sum + inv.total, 0);
+    const totalPaid = invoicesList.reduce((sum, inv) => sum + inv.paid, 0);
+    const totalDebt = Math.max(0, totalSales - totalPaid);
+
+    let xml = `<?xml version="1.0" encoding="utf-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Bottom"/>
+   <Borders/>
+   <Font ss:FontName="Calibri" x:CharSet="178" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+  </Style>
+  <Style ss:ID="CompanyHeader">
+   <Font ss:FontName="Calibri" ss:Size="18" ss:Color="#059669" ss:Bold="1"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Title">
+   <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#1f2937" ss:Bold="1"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Subtitle">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#4b5563" ss:Italic="1"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/>
+   <Interior ss:Color="#059669" ss:Pattern="Solid"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Cell">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="MetaLabel">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#374151"/>
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="MetaValue">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#111827"/>
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="SummaryCell">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#059669"/>
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Interior ss:Color="#ecfdf5" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Statement">
+  <Table>
+   <Column ss:Width="120"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="130"/>
+   
+   <Row ss:Height="35">
+    <Cell ss:MergeAcross="6" ss:StyleID="CompanyHeader"><Data ss:Type="String">${companyName}</Data></Cell>
+   </Row>`;
+
+    if (contactInfo) {
+      xml += `\n   <Row ss:Height="20">
+    <Cell ss:MergeAcross="6" ss:StyleID="Subtitle"><Data ss:Type="String">${contactInfo}</Data></Cell>
+   </Row>`;
+    }
+
+    xml += `\n   <Row ss:Height="25">
+    <Cell ss:MergeAcross="6" ss:StyleID="Title"><Data ss:Type="String">كشف حساب عميل تفصيلي</Data></Cell>
+   </Row>
+   <Row ss:Height="20">
+    <Cell ss:MergeAcross="6" ss:StyleID="Subtitle"><Data ss:Type="String">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')}</Data></Cell>
+   </Row>
+   <Row ss:Height="15"></Row>
+   
+   <Row ss:Height="20">
+    <Cell ss:StyleID="MetaLabel"><Data ss:Type="String">اسم العميل:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${customer.name}</Data></Cell>
+    <Cell ss:StyleID="MetaLabel"><Data ss:Type="String">الولاية:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">ولاية ${customer.state}</Data></Cell>
+    <Cell ss:StyleID="MetaLabel"><Data ss:Type="String">رقم الهاتف:</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="MetaValue"><Data ss:Type="String">${customer.phone}</Data></Cell>
+   </Row>
+   
+   <Row ss:Height="20">
+    <Cell ss:StyleID="MetaLabel"><Data ss:Type="String">سقف الائتمان:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="Number">${customer.creditLimit}</Data></Cell>
+    <Cell ss:StyleID="MetaLabel"><Data ss:Type="String">المندوب:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${customer.representative ? customer.representative.name : 'بيع مباشر'}</Data></Cell>
+    <Cell ss:StyleID="MetaLabel"><Data ss:Type="String">نوع المنشأة:</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="MetaValue"><Data ss:Type="String">${customer.type === 'Pharmacy' ? 'صيدلية' : customer.type === 'Hospital' ? 'مستشفى' : 'موزع'}</Data></Cell>
+   </Row>
+   
+   <Row ss:Height="15"></Row>
+   
+   <Row ss:Height="22">
+    <Cell ss:StyleID="SummaryCell"><Data ss:Type="String">إجمالي الفواتير:</Data></Cell>
+    <Cell ss:StyleID="SummaryCell"><Data ss:Type="Number">${totalSales}</Data></Cell>
+    <Cell ss:StyleID="SummaryCell"><Data ss:Type="String">إجمالي المدفوع:</Data></Cell>
+    <Cell ss:StyleID="SummaryCell"><Data ss:Type="Number">${totalPaid}</Data></Cell>
+    <Cell ss:StyleID="SummaryCell"><Data ss:Type="String">الرصيد المتبقي:</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="SummaryCell"><Data ss:Type="Number">${totalDebt}</Data></Cell>
+   </Row>
+   
+   <Row ss:Height="20"></Row>
+   
+   <Row ss:Height="25">`;
+   
+    headers.forEach(h => {
+      xml += `\n    <Cell ss:StyleID="Header"><Data ss:Type="String">${h}</Data></Cell>`;
+    });
+    
+    xml += `\n   </Row>`;
+
+    invoicesList.forEach(inv => {
+      const statusLabel = inv.status === 'PAID' ? 'خالصة' : inv.status === 'PARTIAL' ? 'مدفوعة جزئياً' : inv.status === 'PENDING' ? 'آجلة' : 'مسودة';
+      xml += `\n   <Row ss:Height="20">
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${inv.id}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${new Date(inv.createdAt).toLocaleDateString('ar-SA')}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${inv.total}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${inv.paid}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${Math.max(0, inv.total - inv.paid)}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${statusLabel}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${inv.representative ? inv.representative.name : 'بيع مباشر'}</Data></Cell>
+   </Row>`;
+    });
+
+    xml += `\n  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <DisplayRightToLeft/>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `statement_${customer.name}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportStatementToPDF = (customer: Customer, invoicesList: any[]) => {
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyPhone = settings?.phone || "غير محدد";
+    const companyAddress = settings?.address || "السودان";
+    const companyLogo = settings?.logo; // Base64 image
+    
+    const totalSales = invoicesList.reduce((sum, inv) => sum + inv.total, 0);
+    const totalPaid = invoicesList.reduce((sum, inv) => sum + inv.paid, 0);
+    const totalDebt = Math.max(0, totalSales - totalPaid);
+
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) return;
+
+    const rowsHTML = invoicesList.map((inv, idx) => {
+      const rem = Math.max(0, inv.total - inv.paid);
+      const statusLabel = inv.status === 'PAID' ? 'خالصة' : inv.status === 'PARTIAL' ? 'جزئية' : 'آجلة';
+      const statusColor = inv.status === 'PAID' ? '#059669' : inv.status === 'PARTIAL' ? '#d97706' : '#dc2626';
+      
+      return `
+        <tr>
+          <td style="text-align: center; padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; font-family: monospace;">${inv.id}</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #e2e8f0; font-family: monospace;">${new Date(inv.createdAt).toLocaleDateString('ar-SA')}</td>
+          <td style="text-align: left; padding: 8px; border: 1px solid #e2e8f0; font-weight: bold;">${inv.total.toLocaleString()} SDG</td>
+          <td style="text-align: left; padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; color: #059669;">${inv.paid.toLocaleString()} SDG</td>
+          <td style="text-align: left; padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; color: #d97706;">${rem.toLocaleString()} SDG</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; color: ${statusColor};">${statusLabel}</td>
+          <td style="text-align: right; padding: 8px; border: 1px solid #e2e8f0;">${inv.representative ? inv.representative.name : 'بيع مباشر'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>كشف حساب عميل - ${customer.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    @page { 
+      size: A4 portrait; 
+      margin: 15mm 12mm 15mm 12mm; 
+    }
+    * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+    body { background: #fff; color: #1e293b; line-height: 1.4; padding: 0; margin: 0; }
+    
+    table.print-layout {
+      width: 100%;
+      border-collapse: collapse;
+      border: none !important;
+    }
+    table.print-layout > thead > tr > td,
+    table.print-layout > tbody > tr > td,
+    table.print-layout > tfoot > tr > td {
+      border: none !important;
+      padding: 0 !important;
+    }
+
+    .header-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #059669;
+      padding-bottom: 12px;
+      margin-bottom: 15px;
+    }
+    .company-logo {
+      max-height: 60px;
+      max-width: 150px;
+      object-fit: contain;
+    }
+    .company-details h1 { font-size: 20px; color: #065f46; margin: 0 0 4px 0; font-weight: 800; }
+    .company-details p { font-size: 11px; color: #475569; margin: 0; }
+    .doc-title { text-align: left; }
+    .doc-title h2 { font-size: 18px; color: #059669; margin: 0; font-weight: 700; }
+    .doc-title p { font-size: 11px; color: #64748b; margin-top: 2px; }
+    
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 15px;
+      font-size: 12px;
+    }
+    .meta-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .meta-row:last-child {
+      margin-bottom: 0;
+    }
+    .meta-label { color: #64748b; font-weight: 500; }
+    .meta-value { color: #0f172a; font-weight: 700; }
+
+    .kpi-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .kpi-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .kpi-title { font-size: 11px; color: #64748b; font-weight: bold; margin-bottom: 4px; }
+    .kpi-value { font-size: 16px; font-weight: 900; font-family: monospace; }
+
+    table.data-table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      margin-bottom: 20px; 
+    }
+    table.data-table th { 
+      background-color: #059669; 
+      color: white; 
+      padding: 8px 6px; 
+      border: 1px solid #059669; 
+      font-size: 12px; 
+      font-weight: 700;
+      text-align: center;
+    }
+    table.data-table td { 
+      font-size: 11px; 
+      border: 1px solid #e2e8f0; 
+      padding: 8px 6px;
+    }
+    table.data-table tr:nth-child(even) { background: #f8fafc; }
+    
+    .footer-section { 
+      border-top: 2px dashed #e2e8f0; 
+      padding-top: 10px; 
+      display: flex; 
+      justify-content: space-between; 
+      font-size: 10px; 
+      color: #64748b; 
+      margin-top: 15px;
+    }
+    .stamp { 
+      border: 2px dashed #cbd5e1; 
+      border-radius: 6px; 
+      padding: 4px 12px; 
+      font-size: 11px; 
+      font-weight: 700; 
+      color: #059669; 
+    }
+    
+    @media print { 
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+    }
+  </style>
+</head>
+<body>
+  <table class="print-layout">
+    <thead>
+      <tr>
+        <td>
+          <div class="header-section">
+            <div class="company-details" style="display: flex; align-items: center; gap: 15px;">
+              ${companyLogo ? `<img src="${companyLogo}" class="company-logo" alt="Logo" />` : ''}
+              <div>
+                <h1>${companyName}</h1>
+                <p>🏢 ${companyAddress} &nbsp;|&nbsp; 📞 هاتف: ${companyPhone}</p>
+              </div>
+            </div>
+            <div class="doc-title">
+              <h2>كشف حساب عميل تفصيلي</h2>
+              <p>تاريخ الطباعة: ${new Date().toLocaleString('ar-SA')}</p>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <div class="meta-grid">
+            <div class="meta-box">
+              <div class="meta-row">
+                <span class="meta-label">العميل:</span>
+                <span class="meta-value">${customer.name}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">رقم الهاتف:</span>
+                <span class="meta-value" style="font-family: monospace;">${customer.phone}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">الولاية الجغرافية:</span>
+                <span class="meta-value">ولاية ${customer.state}</span>
+              </div>
+            </div>
+            <div class="meta-box">
+              <div class="meta-row">
+                <span class="meta-label">سقف الائتمان المعتمد:</span>
+                <span class="meta-value" style="font-family: monospace;">${customer.creditLimit.toLocaleString()} SDG</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">المندوب المسؤول:</span>
+                <span class="meta-value">${customer.representative ? customer.representative.name : 'بيع مباشر'}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">نوع العميل:</span>
+                <span class="meta-value">${customer.type === 'Pharmacy' ? 'صيدلية' : customer.type === 'Hospital' ? 'مستشفى' : 'موزع جملة'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kpi-row">
+            <div class="kpi-card" style="background-color: #ecfdf5; border-color: #a7f3d0;">
+              <div class="kpi-title" style="color: #065f46;">إجمالي الفواتير</div>
+              <div class="kpi-value" style="color: #065f46;">${totalSales.toLocaleString()} SDG</div>
+            </div>
+            <div class="kpi-card" style="background-color: #eff6ff; border-color: #bfdbfe;">
+              <div class="kpi-title" style="color: #1e40af;">إجمالي المدفوع نقداً</div>
+              <div class="kpi-value" style="color: #1e40af;">${totalPaid.toLocaleString()} SDG</div>
+            </div>
+            <div class="kpi-card" style="background-color: #fffbeb; border-color: #fde68a;">
+              <div class="kpi-title" style="color: #92400e;">المديونية المتبقية</div>
+              <div class="kpi-value" style="color: #b45309;">${totalDebt.toLocaleString()} SDG</div>
+            </div>
+          </div>
+          
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="background-color: #059669; color: white; border: 1px solid #059669;">رقم الفاتورة</th>
+                <th style="background-color: #059669; color: white; border: 1px solid #059669;">تاريخ الإصدار</th>
+                <th style="background-color: #059669; color: white; border: 1px solid #059669;">قيمة الفاتورة</th>
+                <th style="background-color: #059669; color: white; border: 1px solid #059669;">المسدد</th>
+                <th style="background-color: #059669; color: white; border: 1px solid #059669;">المتبقي الآجل</th>
+                <th style="background-color: #059669; color: white; border: 1px solid #059669;">حالة الفاتورة</th>
+                <th style="background-color: #059669; color: white; border: 1px solid #059669;">المندوب</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHTML}
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>
+          <div class="footer-section">
+            <div>تم توليد المستند تلقائياً عبر نظام إدارة التوزيع ERP لـ <strong>${companyName}</strong>.</div>
+            <div class="stamp">ختم الحسابات</div>
+          </div>
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <script>
+    window.onload = function() {
+      setTimeout(() => {
+        window.print();
+        window.onafterprint = function() {
+          window.close();
+        };
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+    `);
+    printWindow.document.close();
+  };
+
   const handleOpenDetails = (customer: Customer) => {
     setCustomerForDetails(customer);
     setShowCustomerDetailsModal(true);
   };
+
+  if (selectedCustomerForView) {
+    const c = selectedCustomerForView;
+    const totalSales = customerInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    const totalPaid = customerInvoices.reduce((sum, inv) => sum + inv.paid, 0);
+    const totalDebt = Math.max(0, totalSales - totalPaid);
+    const creditUsagePercent = c.creditLimit > 0 ? Math.min(100, Math.round((totalDebt / c.creditLimit) * 100)) : 0;
+
+    return (
+      <div className="space-y-6 pb-20 lg:pb-0 text-right animate-fade-in" dir="rtl">
+        {/* Header with Back Button */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setSelectedCustomerForView(null)}
+              className="p-2 hover:bg-[var(--border-color)]/50 text-[var(--text-primary)] rounded-xl transition-colors cursor-pointer"
+              title="رجوع للقائمة"
+            >
+              <ArrowRight className="w-6 h-6" />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-[var(--text-primary)]">{c.name}</h1>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  c.type === 'Pharmacy' 
+                    ? 'bg-emerald-500/10 text-emerald-600' 
+                    : c.type === 'Hospital' 
+                    ? 'bg-indigo-500/10 text-indigo-600' 
+                    : 'bg-amber-500/10 text-amber-600'
+                }`}>
+                  {c.type === 'Pharmacy' ? 'صيدلية' : c.type === 'Hospital' ? 'مستشفى' : 'موزع جملة'}
+                </span>
+              </div>
+              <p className="text-[var(--text-secondary)] mt-1 text-sm">تفاصيل كشف الحساب المالي للفواتير والأقساط</p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button 
+              onClick={() => exportStatementToExcel(c, customerInvoices)}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>تصدير Excel كشف الحساب</span>
+            </button>
+            <button 
+              onClick={() => exportStatementToPDF(c, customerInvoices)}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--border-color)]/30 hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] font-medium rounded-xl text-sm transition-all cursor-pointer"
+            >
+              <FileText className="w-4 h-4" />
+              <span>تصدير PDF كشف الحساب</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Customer Quick Profile Info */}
+        <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-[var(--text-secondary)]">معلومات الاتصال والموقع</h3>
+            <div className="space-y-2 text-sm text-[var(--text-primary)]">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-emerald-500" />
+                <span>ولاية {c.state}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-emerald-500" />
+                <span className="font-mono">{c.phone}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-[var(--text-secondary)]">المندوب المسؤول</h3>
+            <div className="space-y-2 text-sm text-[var(--text-primary)]">
+              {c.representative ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="w-4 h-4 text-emerald-500" />
+                    <strong>{c.representative.name}</strong>
+                  </div>
+                  <div className="text-xs text-[var(--text-secondary)]">نسبة العمولة: {c.representative.commissionRate}%</div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+                  <UserCheck className="w-4 h-4" />
+                  <span>بيع مباشر (مسؤول شركة - بدون عمولات)</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-[var(--text-secondary)] font-bold">
+              <span>نسبة استخدام الائتمان:</span>
+              <span className={creditUsagePercent >= 90 ? 'text-rose-500 font-extrabold' : 'text-emerald-500 font-extrabold'}>
+                {creditUsagePercent}%
+              </span>
+            </div>
+            <div className="w-full h-3 bg-[var(--border-color)]/30 rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ${
+                  creditUsagePercent >= 90 
+                    ? 'bg-rose-500' 
+                    : creditUsagePercent >= 75 
+                    ? 'bg-amber-500' 
+                    : 'bg-emerald-500'
+                }`}
+                style={{ width: `${creditUsagePercent}%` }} 
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-[var(--text-secondary)]">
+              <span>سقف الائتمان: {c.creditLimit.toLocaleString()} SDG</span>
+              <span>المتبقي المتاح: {Math.max(0, c.creditLimit - totalDebt).toLocaleString()} SDG</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Financial KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="glass-card p-5 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/10 flex justify-between items-center">
+            <div>
+              <span className="text-xs text-[var(--text-secondary)] block font-semibold mb-1">إجمالي الفواتير</span>
+              <h2 className="text-2xl font-black text-[var(--text-primary)] font-mono">{totalSales.toLocaleString()} <span className="text-xs">SDG</span></h2>
+              <span className="text-[10px] text-[var(--text-secondary)] mt-1 block">إجمالي المبيعات المسجلة للعميل</span>
+            </div>
+          </div>
+
+          <div className="glass-card p-5 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/10 flex justify-between items-center">
+            <div>
+              <span className="text-xs text-[var(--text-secondary)] block font-semibold mb-1">إجمالي التحصيلات</span>
+              <h2 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">{totalPaid.toLocaleString()} <span className="text-xs">SDG</span></h2>
+              <span className="text-[10px] text-[var(--text-secondary)] mt-1 block">المبالغ المسددة بالفعل</span>
+            </div>
+          </div>
+
+          <div className={`glass-card p-5 rounded-2xl border flex justify-between items-center ${
+            totalDebt > c.creditLimit ? 'border-rose-500/30 bg-rose-500/5' : 'border-[var(--border-color)] bg-[var(--bg-secondary)]/10'
+          }`}>
+            <div>
+              <span className="text-xs text-[var(--text-secondary)] block font-semibold mb-1">المديونية المتبقية</span>
+              <h2 className={`text-2xl font-black font-mono ${totalDebt > c.creditLimit ? 'text-rose-500' : 'text-amber-500'}`}>
+                {totalDebt.toLocaleString()} <span className="text-xs">SDG</span>
+              </h2>
+              {totalDebt > c.creditLimit && (
+                <span className="text-[10px] text-rose-500 font-bold mt-1 block flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>تجاوز سقف الائتمان!</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="glass-card p-5 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/10 flex justify-between items-center">
+            <div>
+              <span className="text-xs text-[var(--text-secondary)] block font-semibold mb-1">عدد الفواتير</span>
+              <h2 className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">{customerInvoices.length} <span className="text-xs">فاتورة</span></h2>
+              <span className="text-[10px] text-[var(--text-secondary)] mt-1 block">مسددة وآجلة ومسودات</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Invoices List Section */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-bold font-display flex items-center gap-2 text-[var(--text-primary)]">
+            <FileText className="w-5 h-5 text-emerald-500" />
+            <span>كشف الفواتير المصدرة للعميل ({customerInvoices.length} فاتورة)</span>
+          </h2>
+
+          {loadingInvoices ? (
+            <div className="glass-card text-center py-12 rounded-2xl text-[var(--text-secondary)] text-sm">
+              جاري تحميل تفاصيل كشف الحساب...
+            </div>
+          ) : customerInvoices.length === 0 ? (
+            <div className="glass-card text-center py-12 rounded-2xl text-[var(--text-secondary)] text-sm">
+              لم تصدر أي فواتير لهذا العميل حتى الآن.
+            </div>
+          ) : (
+            <div className="glass-card rounded-2xl overflow-hidden border border-[var(--glass-border)]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right border-collapse text-xs sm:text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/40 text-[var(--text-secondary)]">
+                      <th className="py-3.5 px-4 font-bold">رقم الفاتورة</th>
+                      <th className="py-3.5 px-4 font-bold">تاريخ الإصدار</th>
+                      <th className="py-3.5 px-4 font-bold text-left">قيمة الفاتورة</th>
+                      <th className="py-3.5 px-4 font-bold text-left">المسدد نقداً</th>
+                      <th className="py-3.5 px-4 font-bold text-left">المتبقي الآجل</th>
+                      <th className="py-3.5 px-4 font-bold">حالة الفاتورة</th>
+                      <th className="py-3.5 px-4 font-bold">المندوب</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
+                    {customerInvoices.map((inv) => {
+                      const rem = Math.max(0, inv.total - inv.paid);
+                      return (
+                        <tr key={inv.id} className="hover:bg-[var(--border-color)]/10 transition-all">
+                          <td className="py-3.5 px-4 font-bold font-mono text-emerald-600">{inv.id}</td>
+                          <td className="py-3.5 px-4 font-mono text-[var(--text-secondary)]">
+                            {new Date(inv.createdAt).toLocaleDateString('ar-SA')}
+                          </td>
+                          <td className="py-3.5 px-4 text-left font-bold font-mono">{inv.total.toLocaleString()} SDG</td>
+                          <td className="py-3.5 px-4 text-left font-bold font-mono text-emerald-600">{inv.paid.toLocaleString()} SDG</td>
+                          <td className="py-3.5 px-4 text-left font-bold font-mono text-amber-500">{rem.toLocaleString()} SDG</td>
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              inv.status === 'PAID' 
+                                ? 'bg-emerald-500/10 text-emerald-600' 
+                                : inv.status === 'PARTIAL' 
+                                ? 'bg-amber-500/10 text-amber-600' 
+                                : 'bg-rose-500/10 text-rose-600'
+                            }`}>
+                              {inv.status === 'PAID' ? 'خالصة' : inv.status === 'PARTIAL' ? 'مدفوعة جزئياً' : 'آجلة'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-[var(--text-secondary)]">
+                            {inv.representative ? inv.representative.name : 'بيع مباشر'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-20 lg:pb-0 text-right" dir="rtl">
@@ -547,7 +1248,7 @@ export default function Customers() {
                       {paginatedCustomers.map((c) => (
                         <tr 
                           key={c.id} 
-                          onClick={() => handleOpenDetails(c)}
+                          onClick={() => setSelectedCustomerForView(c)}
                           className="hover:bg-[var(--border-color)]/10 cursor-pointer text-[var(--text-primary)] transition-all group"
                         >
                           <td className="py-3.5 px-4 font-bold text-emerald-600 group-hover:text-emerald-700 transition-colors">

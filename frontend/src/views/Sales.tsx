@@ -50,6 +50,7 @@ interface InvoiceInstallment {
 
 interface Invoice {
   id: string;
+  realId?: string;
   customerName: string;
   customerId?: string;
   total: number;
@@ -539,12 +540,6 @@ export default function Sales() {
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
-  const selectedCustomerDebt = selectedCustomerId 
-    ? sales
-        .filter(s => (s.customerId === selectedCustomerId || s.customerName === selectedCustomer?.name) && s.status !== 'DRAFT')
-        .reduce((sum, s) => sum + Math.max(0, s.total - s.paid), 0)
-    : 0;
-
   useEffect(() => {
     if (selectedCustomer) {
       if (selectedCustomer.representativeId) {
@@ -634,6 +629,12 @@ export default function Sales() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const selectedCustomerDebt = selectedCustomerId 
+    ? sales
+        .filter(s => (s.customerId === selectedCustomerId || s.customerName === selectedCustomer?.name) && s.status !== 'DRAFT')
+        .reduce((sum, s) => sum + Math.max(0, s.total - s.paid), 0)
+    : 0;
 
   // Advanced features state variables
   const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -734,6 +735,9 @@ export default function Sales() {
   const [editInvoiceDate, setEditInvoiceDate] = useState('');
   const [editInstallmentsPlan, setEditInstallmentsPlan] = useState<{ dueDate: string; amount: string | number; notes: string }[]>([]);
   const [editCart, setEditCart] = useState<CartItem[]>([]);
+  const [editSelectedRepId, setEditSelectedRepId] = useState('');
+  const [editRepSearch, setEditRepSearch] = useState('');
+  const [isEditRepDropdownOpen, setIsEditRepDropdownOpen] = useState(false);
   const editCartTotal = editCart.reduce((sum, item) => sum + (item.qty * item.price), 0);
 
   const addInstallmentToEditPlan = () => {
@@ -771,6 +775,7 @@ export default function Sales() {
       await apiClient.put(`/sales/${selectedInvoice.realId || selectedInvoice.id}/update-invoice`, {
         createdAt: new Date(editInvoiceDate).toISOString(),
         paid: editInvoicePaid,
+        representativeId: editSelectedRepId || null,
         installments: editInstallmentsPlan.map(i => ({
           dueDate: i.dueDate,
           amount: parseDigits(i.amount),
@@ -1847,6 +1852,7 @@ export default function Sales() {
                     setIsEditingInvoice(true);
                     setEditInvoicePaid(selectedInvoice.paid);
                     setEditInvoiceDate(selectedInvoice.createdAt.split('T')[0]);
+                    setEditSelectedRepId(selectedInvoice.representative?.id || '');
                     setEditInstallmentsPlan(
                       selectedInvoice.installments?.map(inst => ({
                         dueDate: inst.dueDate.split('T')[0],
@@ -1994,7 +2000,7 @@ export default function Sales() {
                   <span className="text-xs text-[var(--text-secondary)] font-mono">تحديث المعطيات المالية للفاتورة رقم: {selectedInvoice.id}</span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pr-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pr-3">
                   <div className="space-y-2 text-right">
                     <label className="block text-xs font-bold text-[var(--text-secondary)]">تاريخ إصدار الفاتورة</label>
                     <DatePicker value={editInvoiceDate} onChange={setEditInvoiceDate} />
@@ -2011,6 +2017,55 @@ export default function Sales() {
                         className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] text-sm font-bold outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all text-center pr-10"
                       />
                       <DollarSign className="w-4 h-4 text-cyan-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-right relative">
+                    <label className="block text-xs font-bold text-[var(--text-secondary)]">المندوب المسؤول وعمولة البيع</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={isEditRepDropdownOpen ? editRepSearch : (editSelectedRepId ? `${representatives.find(r => r.id === editSelectedRepId)?.name} (عمولة ${representatives.find(r => r.id === editSelectedRepId)?.commissionRate}%)` : 'بيع مباشر بدون عمولة')}
+                        placeholder="ابحث عن مندوب..."
+                        onFocus={() => {
+                          setEditRepSearch('');
+                          setIsEditRepDropdownOpen(true);
+                        }}
+                        onChange={(e) => {
+                          setEditRepSearch(e.target.value);
+                          setIsEditRepDropdownOpen(true);
+                        }}
+                        className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] text-sm font-bold outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all text-center pr-10 cursor-pointer"
+                      />
+                      <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-cyan-500">
+                        <Briefcase className="w-4 h-4" />
+                      </div>
+                      {isEditRepDropdownOpen && (
+                        <div className="absolute z-50 w-full mt-1.5 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-primary)] shadow-2xl max-h-48 overflow-y-auto">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditSelectedRepId('');
+                              setIsEditRepDropdownOpen(false);
+                            }}
+                            className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-xs font-bold transition-colors block border-b border-[var(--border-color)]/20"
+                          >
+                            بيع مباشر بدون عمولة
+                          </button>
+                          {representatives.filter(r => r.isActive && r.name.toLowerCase().includes(editRepSearch.toLowerCase())).map((r) => (
+                            <button
+                              type="button"
+                              key={r.id}
+                              onClick={() => {
+                                setEditSelectedRepId(r.id);
+                                setIsEditRepDropdownOpen(false);
+                              }}
+                              className="w-full text-right px-4 py-2.5 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-xs transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                            >
+                              {r.name} (عمولة {r.commissionRate}%)
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2499,10 +2554,13 @@ export default function Sales() {
                         </div>
 
                         <div className="relative pr-6 border-r-2 border-dashed border-[var(--border-color)] space-y-6 mr-3">
-                          {selectedInvoice.installments.map((inst, idx) => {
-                            const remaining = Math.max(0, inst.amount - inst.paidAmount);
-                            return (
-                              <div key={inst.id || idx} className="relative group text-right">
+                          {selectedInvoice.installments
+                            .slice()
+                            .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+                            .map((inst, idx) => {
+                              const remaining = Math.max(0, inst.amount - inst.paidAmount);
+                              return (
+                                <div key={inst.id || idx} className="relative group text-right">
                                 
                                 {/* نقطة الخط الزمني المضيئة */}
                                 <div className={`absolute -right-[31px] top-1 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
