@@ -703,6 +703,13 @@ export default function Sales() {
       setSelectedInvoice(sale); // Set basic details first to show header
       const { data } = await apiClient.get<Invoice>(`/sales/${sale.realId || sale.id}`);
       setSelectedInvoice(data);
+      try {
+        const { data: returnsData } = await apiClient.get(`/returns/sale/${sale.realId || sale.id}`);
+        setInvoiceReturns(returnsData);
+      } catch (err) {
+        console.error('Failed to load returns for invoice:', err);
+        setInvoiceReturns([]);
+      }
     } catch (error) {
       console.error('Failed to load invoice details:', error);
       setSelectedInvoice(sale);
@@ -761,7 +768,7 @@ export default function Sales() {
     
     try {
       setIsSubmitting(true);
-      await apiClient.put(`/sales/${selectedInvoice.id}/update-invoice`, {
+      await apiClient.put(`/sales/${selectedInvoice.realId || selectedInvoice.id}/update-invoice`, {
         createdAt: new Date(editInvoiceDate).toISOString(),
         paid: editInvoicePaid,
         installments: editInstallmentsPlan.map(i => ({
@@ -798,6 +805,47 @@ export default function Sales() {
     }
   };
 
+  const handleApproveInvoice = async (invoice: Invoice) => {
+    if (!confirm('هل أنت متأكد من رغبتك في اعتماد عرض السعر وتحويله إلى فاتورة نهائية مع خصم الأرصدة؟')) return;
+    try {
+      setIsSubmitting(true);
+      await apiClient.put(`/sales/${invoice.realId || invoice.id}/update-invoice`, {
+        createdAt: new Date(invoice.createdAt).toISOString(),
+        paid: invoice.paid,
+        items: invoice.items.map(item => {
+          const b = batches.find(batch => batch.batchNumber === item.batchNumber && batch.productId === item.productId);
+          return {
+            productId: item.productId || '',
+            batchId: item.batchId || b?.id || '',
+            qty: item.qty,
+            price: item.price,
+          };
+        }),
+        installments: invoice.installments?.map(inst => ({
+          dueDate: inst.dueDate,
+          amount: inst.amount,
+          notes: inst.notes || ''
+        })) || []
+      });
+
+      alert('تم اعتماد الفاتورة وتحديث الأرصدة بنجاح!');
+      const { data } = await apiClient.get<Invoice[]>('/sales');
+      setSales(data);
+      const updated = data.find(s => s.id === invoice.id);
+      if (updated) {
+        const { data: fullInvoice } = await apiClient.get<Invoice>(`/sales/${updated.realId || updated.id}`);
+        setSelectedInvoice(fullInvoice);
+      } else {
+        setSelectedInvoice(null);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('فشل في اعتماد الفاتورة');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; invoiceId: string | null; loading: boolean }>({
     open: false,
     invoiceId: null,
@@ -812,6 +860,20 @@ export default function Sales() {
     invoice: null,
     installmentId: undefined,
     amount: 0,
+    loading: false,
+  });
+
+  // Return system states
+  const [invoiceReturns, setInvoiceReturns] = useState<any[]>([]);
+  const [returnModal, setReturnModal] = useState<{
+    open: boolean;
+    refundToCash: boolean;
+    items: { productId: string; batchId: string; productName: string; batchNumber: string; qty: number; maxQty: number; price: number }[];
+    loading: boolean;
+  }>({
+    open: false,
+    refundToCash: true,
+    items: [],
     loading: false,
   });
 
@@ -1379,7 +1441,7 @@ export default function Sales() {
       if (installmentId) {
         await apiClient.post(`/sales/installments/${installmentId}/pay`, { amount });
       } else {
-        await apiClient.post(`/sales/${invoice.id}/pay`, { amount });
+        await apiClient.post(`/sales/${invoice.realId || invoice.id}/pay`, { amount });
       }
       
       useActivityStore.getState().logActivity(
@@ -1401,6 +1463,89 @@ export default function Sales() {
     }
 
     closePaymentModal();
+  };
+
+  const openReturnModal = () => {
+    if (!selectedInvoice) return;
+    
+    const returnedQtys: Record<string, number> = {};
+    invoiceReturns.forEach(ret => {
+      ret.items.forEach((item: any) => {
+        const key = `${item.productId}-${item.batchId}`;
+        returnedQtys[key] = (returnedQtys[key] || 0) + item.qty;
+      });
+    });
+
+    const itemsForReturn = selectedInvoice.items.map(item => {
+      const b = batches.find(batch => batch.batchNumber === item.batchNumber && batch.productId === item.productId);
+      const key = `${item.productId || ''}-${item.batchId || b?.id || ''}`;
+      const alreadyReturned = returnedQtys[key] || 0;
+      const maxQty = item.qty - alreadyReturned;
+
+      return {
+        productId: item.productId || '',
+        batchId: item.batchId || b?.id || '',
+        productName: item.productName,
+        batchNumber: item.batchNumber,
+        qty: 0,
+        maxQty: maxQty,
+        price: item.price
+      };
+    }).filter(item => item.maxQty > 0);
+
+    setReturnModal({
+      open: true,
+      refundToCash: true,
+      items: itemsForReturn,
+      loading: false
+    });
+  };
+
+  const handleReturnSubmit = async () => {
+    if (!selectedInvoice || returnModal.loading) return;
+    
+    const itemsToReturn = returnModal.items.filter(item => item.qty > 0);
+    if (itemsToReturn.length === 0) {
+      alert('يجب تحديد كمية أكبر من الصفر لصنف واحد على الأقل لإجراء المرتجع');
+      return;
+    }
+
+    setReturnModal(prev => ({ ...prev, loading: true }));
+
+    try {
+      await apiClient.post('/returns', {
+        saleId: selectedInvoice.realId || selectedInvoice.id,
+        refundToCash: returnModal.refundToCash,
+        items: itemsToReturn.map(item => ({
+          productId: item.productId,
+          batchId: item.batchId,
+          qty: item.qty
+        }))
+      });
+
+      alert('تم تسجيل المرتجع وتحديث المخزون بنجاح!');
+      setReturnModal(prev => ({ ...prev, open: false }));
+
+      // Reload sales from server
+      const { data: updatedSales } = await apiClient.get<Invoice[]>('/sales');
+      setSales(updatedSales);
+      
+      // Reload full invoice details and its returns
+      const { data: fullInvoice } = await apiClient.get<Invoice>(`/sales/${selectedInvoice.realId || selectedInvoice.id}`);
+      setSelectedInvoice(fullInvoice);
+      const { data: returnsData } = await apiClient.get(`/returns/sale/${selectedInvoice.realId || selectedInvoice.id}`);
+      setInvoiceReturns(returnsData);
+
+      useActivityStore.getState().logActivity(
+        'مرتجع مبيعات',
+        `تم عمل مرتجع بقيمة ${itemsToReturn.reduce((sum, item) => sum + (item.qty * item.price), 0).toLocaleString()} SDG للفاتورة رقم ${selectedInvoice.id} للعميل ${selectedInvoice.customerName}`
+      );
+    } catch (error: any) {
+      console.error('Failed to submit return:', error);
+      alert(error.response?.data?.message || 'فشل في تسجيل عملية المرتجع');
+    } finally {
+      setReturnModal(prev => ({ ...prev, loading: false }));
+    }
   };
 
   const handleCheckout = async () => {
@@ -1744,13 +1889,33 @@ export default function Sales() {
                 </button>
               )}
               
-              {selectedInvoice.status !== 'PAID' && !isEditingInvoice && (
+              {selectedInvoice.status === 'DRAFT' && !isEditingInvoice && (
+                <button
+                  onClick={() => handleApproveInvoice(selectedInvoice)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white hover:bg-emerald-600 rounded-2xl text-xs font-black shadow-lg shadow-emerald-500/15 transition-all hover:-translate-y-0.5 active:translate-y-0 animate-pulse"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>اعتماد وتحويل لفاتورة معتمدة</span>
+                </button>
+              )}
+              
+              {selectedInvoice.status !== 'PAID' && selectedInvoice.status !== 'DRAFT' && !isEditingInvoice && (
                 <button
                   onClick={() => openPaymentModal(selectedInvoice)}
                   className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-500 text-white hover:bg-emerald-600 rounded-2xl text-xs font-black shadow-lg shadow-emerald-500/15 transition-all hover:-translate-y-0.5 active:translate-y-0"
                 >
                   <DollarSign className="w-3.5 h-3.5" />
                   <span>تسجيل دفعة سداد</span>
+                </button>
+              )}
+
+              {selectedInvoice.status !== 'DRAFT' && !isEditingInvoice && (
+                <button
+                  onClick={openReturnModal}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 text-white hover:bg-amber-600 rounded-2xl text-xs font-black shadow-lg shadow-amber-500/15 transition-all hover:-translate-y-0.5 active:translate-y-0"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+                  <span>إرجاع أصناف</span>
                 </button>
               )}
               
@@ -1772,7 +1937,7 @@ export default function Sales() {
 
               {user?.role === 'ADMIN' && !isEditingInvoice && (
                 <button
-                  onClick={() => setDeleteConfirm({ open: true, invoiceId: selectedInvoice.id, loading: false })}
+                  onClick={() => setDeleteConfirm({ open: true, invoiceId: selectedInvoice.realId || selectedInvoice.id, loading: false })}
                   className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-2xl text-xs font-black transition-all hover:-translate-y-0.5 mr-auto"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -1795,7 +1960,7 @@ export default function Sales() {
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto justify-end">
                   <button
-                    onClick={() => handleUpdateInvoiceDate(selectedInvoice.id, editDateValue)}
+                    onClick={() => handleUpdateInvoiceDate(selectedInvoice.realId || selectedInvoice.id, editDateValue)}
                     className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-amber-500/10 cursor-pointer"
                   >
                     حفظ التغيير
@@ -2270,6 +2435,61 @@ export default function Sales() {
                       </div>
                     </div>
 
+                    {/* ↩️ الأصناف المرتجعة سابقاً */}
+                    {invoiceReturns && invoiceReturns.length > 0 && (
+                      <div className="glass-card rounded-3xl border border-amber-500/20 bg-amber-500/[0.02] dark:bg-amber-500/[0.04] overflow-hidden shadow-sm space-y-4 p-5">
+                        <div className="flex items-center gap-2 border-b border-amber-500/10 pb-3">
+                          <ArrowRight className="w-4.5 h-4.5 text-amber-500 rotate-180" />
+                          <span className="text-sm font-black text-[var(--text-primary)]">الأصناف المرتجعة سابقاً من هذه الفاتورة</span>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          {invoiceReturns.map((ret, rIdx) => (
+                            <div key={ret.id} className="bg-[var(--bg-primary)]/50 border border-[var(--border-color)] rounded-2xl p-4 space-y-3">
+                              <div className="flex justify-between items-center text-xs text-[var(--text-secondary)] font-bold">
+                                <span>مرتجع #{invoiceReturns.length - rIdx}</span>
+                                <span className="font-mono">{new Date(ret.createdAt).toLocaleDateString('ar-SA')}</span>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-right text-[11px] border-collapse">
+                                  <thead>
+                                    <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
+                                      <th className="pb-2 text-right">اسم الدواء</th>
+                                      <th className="pb-2 text-center">التشغيلة</th>
+                                      <th className="pb-2 text-center">الكمية المرتجعة</th>
+                                      <th className="pb-2 text-left">السعر الفرعي</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-[var(--border-color)]/50">
+                                    {ret.items.map((item: any, iIdx: number) => (
+                                      <tr key={item.id || iIdx} className="text-[var(--text-primary)]">
+                                        <td className="py-2 text-right font-semibold">{item.product?.name || 'منتج غير معروف'}</td>
+                                        <td className="py-2 text-center font-mono">{item.batch?.batchNumber || '---'}</td>
+                                        <td className="py-2 text-center font-mono font-bold text-amber-600">{item.qty}</td>
+                                        <td className="py-2 text-left font-mono font-bold">{(item.qty * item.price).toLocaleString()} SDG</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div className="flex justify-between items-center text-xs border-t border-[var(--border-color)]/50 pt-2 font-bold flex-wrap gap-2">
+                                <div className="flex gap-2">
+                                  <span className="text-[var(--text-secondary)]">طريقة الاسترداد:</span>
+                                  <span className={ret.refundToCash ? 'text-emerald-600' : 'text-blue-600'}>
+                                    {ret.refundToCash ? 'نقداً من الصندوق' : 'خصماً من المديونية والأقساط'}
+                                  </span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <span className="text-[var(--text-secondary)]">قيمة المرتجع:</span>
+                                  <span className="text-amber-600 font-mono">{ret.totalRefund.toLocaleString()} SDG</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* ⏳ خط زمني تفاعلي وأنيق للأقساط والدفعات المستحقة */}
                     {selectedInvoice.installments && selectedInvoice.installments.length > 0 && (
                       <div className="glass-card p-6 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-sm space-y-6">
@@ -2398,15 +2618,25 @@ export default function Sales() {
                     </div>
                   </div>
 
-                  {/* زر السداد السريع المباشر */}
-                  {selectedInvoice.status !== 'PAID' && (
+                  {/* زر السداد السريع أو اعتماد عرض السعر */}
+                  {selectedInvoice.status === 'DRAFT' ? (
                     <button
-                      onClick={() => openPaymentModal(selectedInvoice)}
-                      className="w-full mt-4 inline-flex items-center justify-center gap-2 px-4 py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white rounded-2xl font-black text-xs transition-all shadow-lg shadow-emerald-500/10 hover:-translate-y-0.5"
+                      onClick={() => handleApproveInvoice(selectedInvoice)}
+                      className="w-full mt-4 inline-flex items-center justify-center gap-2 px-4 py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white rounded-2xl font-black text-xs transition-all shadow-lg shadow-emerald-500/10 hover:-translate-y-0.5 animate-pulse"
                     >
-                      <DollarSign className="w-4 h-4" />
-                      <span>تسجيل دفعة نقدية فورية</span>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>اعتماد وتحويل لفاتورة معتمدة</span>
                     </button>
+                  ) : (
+                    selectedInvoice.status !== 'PAID' && (
+                      <button
+                        onClick={() => openPaymentModal(selectedInvoice)}
+                        className="w-full mt-4 inline-flex items-center justify-center gap-2 px-4 py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white rounded-2xl font-black text-xs transition-all shadow-lg shadow-emerald-500/10 hover:-translate-y-0.5"
+                      >
+                        <DollarSign className="w-4 h-4" />
+                        <span>تسجيل دفعة نقدية فورية</span>
+                      </button>
+                    )
                   )}
                 </div>
               </div>
@@ -2602,6 +2832,7 @@ export default function Sales() {
                     <option value="PAID">مدفوع بالكامل</option>
                     <option value="PARTIAL">مدفوع جزئياً</option>
                     <option value="PENDING">غير مدفوع / معلق</option>
+                    <option value="DRAFT">عروض الأسعار (مسودات)</option>
                   </select>
                 </div>
               </div>
@@ -2743,14 +2974,15 @@ export default function Sales() {
                               <span className={`px-3 py-1 rounded-full text-[11px] font-semibold ${
                                 sale.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : 
                                 sale.status === 'PARTIAL' ? 'bg-amber-500/10 text-amber-500' : 
+                                sale.status === 'DRAFT' ? 'bg-cyan-500/10 text-cyan-500' :
                                 'bg-gray-500/10 text-gray-500'
                               }`}>
-                                {sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق'}
+                                {sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : sale.status === 'DRAFT' ? 'عرض سعر' : 'معلق'}
                               </span>
                             </td>
                             <td className="py-4 px-4 pl-6 text-center" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1.5">
-                                {sale.status !== 'PAID' && (
+                                {sale.status !== 'PAID' && sale.status !== 'DRAFT' && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); openPaymentModal(sale); }}
                                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-semibold transition-colors"
@@ -3754,7 +3986,125 @@ export default function Sales() {
 
 
 
-      {/* Quick Add Customer Modal */}
+      {/* Return Modal */}
+      {returnModal.open && selectedInvoice && (
+        <div className="modal-overlay z-[999]" onClick={() => setReturnModal(prev => ({ ...prev, open: false }))}>
+          <div className="modal-content-card max-w-xl w-full mx-4" onClick={(e) => e.stopPropagation()} dir="rtl">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <ArrowRight className="w-5 h-5 text-amber-500 rotate-180" />
+                <h3 className="text-lg font-bold text-[var(--text-primary)]">إرجاع أصناف من الفاتورة</h3>
+              </div>
+              <button onClick={() => setReturnModal(prev => ({ ...prev, open: false }))} className="p-2 rounded-xl bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="glass-card rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 mb-6 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)] font-bold">رقم الفاتورة</span>
+                <span className="font-mono font-semibold text-[var(--text-primary)]">{selectedInvoice.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)] font-bold">العميل</span>
+                <span className="font-semibold text-[var(--text-primary)]">{selectedInvoice.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-secondary)] font-bold">المديونية المتبقية حالياً</span>
+                <span className="font-semibold text-rose-500 font-mono">{(selectedInvoice.total - selectedInvoice.paid).toLocaleString()} SDG</span>
+              </div>
+            </div>
+
+            {returnModal.items.length === 0 ? (
+              <div className="text-center py-8 text-sm text-[var(--text-secondary)] font-bold bg-[var(--bg-secondary)]/50 rounded-2xl border border-dashed border-[var(--border-color)]">
+                ✨ تم إرجاع جميع أصناف هذه الفاتورة بالكامل!
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
+                  <label className="block text-xs font-bold text-[var(--text-secondary)] text-right mb-1">حدد الكميات المراد إرجاعها:</label>
+                  {returnModal.items.map((item, idx) => (
+                    <div key={idx} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)]/40 gap-3 text-xs">
+                      <div className="text-right space-y-1">
+                        <p className="font-black text-[var(--text-primary)]">{item.productName}</p>
+                        <p className="text-[10px] text-[var(--text-secondary)]">تشغيلة: <span className="font-mono font-bold">{item.batchNumber}</span> | السعر: <span className="font-mono font-bold">{item.price.toLocaleString()} SDG</span></p>
+                      </div>
+                      <div className="flex items-center gap-3 self-end sm:self-center">
+                        <span className="text-[10px] text-[var(--text-secondary)]">المتاح للإرجاع: <strong>{item.maxQty}</strong></span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={item.maxQty}
+                          value={item.qty || ''}
+                          onChange={(e) => {
+                            const val = Math.min(item.maxQty, Math.max(0, parseInt(e.target.value) || 0));
+                            setReturnModal(prev => ({
+                              ...prev,
+                              items: prev.items.map((it, i) => i === idx ? { ...it, qty: val } : it)
+                            }));
+                          }}
+                          placeholder="0"
+                          className="w-20 px-3 py-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] font-bold text-center outline-none focus:border-amber-500/50"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-2 text-right">
+                  <label className="block text-xs font-bold text-[var(--text-secondary)]">طريقة تسوية القيمة المالية للمرتجع:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setReturnModal(prev => ({ ...prev, refundToCash: true }))}
+                      className={`px-4 py-3 rounded-xl border font-bold text-xs transition-all flex flex-col items-center justify-center gap-1 ${
+                        returnModal.refundToCash
+                          ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--border-color)]/20'
+                      }`}
+                    >
+                      <span className="font-black text-sm">استرداد نقدي (كاش)</span>
+                      <span className="text-[9px] opacity-75 font-normal">يتم خصم المبلغ من الصندوق اليومي مباشرة</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setReturnModal(prev => ({ ...prev, refundToCash: false }))}
+                      className={`px-4 py-3 rounded-xl border font-bold text-xs transition-all flex flex-col items-center justify-center gap-1 ${
+                        !returnModal.refundToCash
+                          ? 'bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400'
+                          : 'bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--border-color)]/20'
+                      }`}
+                    >
+                      <span className="font-black text-sm">تخفيض المديونية</span>
+                      <span className="text-[9px] opacity-75 font-normal">يُخصم من الأقساط والمديونية دون حركة نقدية</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-amber-500/[0.04] border border-amber-500/20 text-center font-bold text-xs text-[var(--text-primary)]">
+                  <span>إجمالي قيمة المرتجع المقترحة: </span>
+                  <strong className="font-mono text-sm text-amber-600">
+                    {returnModal.items.reduce((sum, item) => sum + (item.qty * item.price), 0).toLocaleString()} SDG
+                  </strong>
+                </div>
+
+                <button
+                  onClick={handleReturnSubmit}
+                  disabled={returnModal.loading || returnModal.items.reduce((sum, item) => sum + item.qty, 0) === 0}
+                  className="w-full rounded-2xl bg-amber-500 px-5 py-4 text-white font-semibold hover:bg-amber-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  {returnModal.loading ? (
+                    <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <><CheckCircle2 className="w-5 h-5" /><span>تأكيد المرتجع وحفظ التغييرات</span></>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showQuickAddCustomer && (
         <div className="modal-overlay z-[9999]" onClick={() => setShowQuickAddCustomer(false)}>

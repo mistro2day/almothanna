@@ -14,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { RepresentativesModule } from './representatives/representatives.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { ReturnsModule } from './returns/returns.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ExpensesModule } from './expenses/expenses.module';
     ReportsModule,
     RepresentativesModule,
     ExpensesModule,
+    ReturnsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

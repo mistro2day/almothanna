@@ -43,6 +43,7 @@ model Product {
   batches        Batch[]
   saleItems      SaleItem[]
   purchaseItems  PurchaseItem[]
+  returnItems    ReturnItem[]
   supplierId     String?
   supplier       Supplier?      @relation("SupplierProducts", fields: [supplierId], references: [id], onDelete: SetNull)
   createdAt      DateTime       @default(now())
@@ -62,6 +63,7 @@ model Batch {
   manufactureDate DateTime
   stockMovements  StockMovement[]
   saleItems       SaleItem[]
+  returnItems     ReturnItem[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
@@ -110,6 +112,7 @@ model Sale {
   paid             Float           @default(0)
   status           SaleStatus      @default(PENDING)
   items            SaleItem[]
+  returns          Return[]
   deliveryOrders   DeliveryOrder[]
   installments     Installment[]
   representativeId String?
@@ -330,4 +333,27 @@ model Expense {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 }
+
+model Return {
+  id           String       @id @default(uuid())
+  saleId       String
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  totalRefund  Float
+  refundToCash Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  items        ReturnItem[]
+}
+
+model ReturnItem {
+  id         String   @id @default(uuid())
+  returnId   String
+  return     Return   @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batchId    String
+  batch      Batch    @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  qty        Int
+  price      Float
+}
+
 

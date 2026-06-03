@@ -346,8 +346,8 @@ export class SalesService {
       throw new NotFoundException('Sale not found');
     }
 
-    const itemsProvided = dto.items && dto.items.length > 0;
-    const newTotal = itemsProvided
+    const itemsProvided = !!(dto.items && dto.items.length > 0);
+    const newTotal = itemsProvided && dto.items
       ? dto.items.reduce((sum, item) => sum + (item.qty * item.price), 0)
       : sale.total;
 
@@ -358,7 +358,7 @@ export class SalesService {
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Revert old stock if old sale was not a DRAFT
-      if (sale.status !== 'DRAFT') {
+      if ((sale.status as any) !== 'DRAFT') {
         for (const item of sale.items) {
           await tx.batch.update({
             where: { id: item.batchId },
@@ -381,7 +381,7 @@ export class SalesService {
 
       // 2. Deduct new stock if new status is not a DRAFT
       if (targetStatus !== 'DRAFT') {
-        const finalItems = itemsProvided ? dto.items : sale.items;
+        const finalItems = itemsProvided && dto.items ? dto.items : sale.items;
         for (const item of finalItems) {
           const batch = await tx.batch.findUnique({
             where: { id: item.batchId },
@@ -482,8 +482,8 @@ export class SalesService {
 
   async getDashboardStats() {
     // Get all sales with items for calculation
-    const sales = await this.prisma.sale.findMany({
-      where: { status: { notIn: ['CANCELLED', 'DRAFT'] } },
+    const sales = (await this.prisma.sale.findMany({
+      where: { status: { notIn: ['CANCELLED', 'DRAFT'] as any } },
       include: {
         items: {
           include: {
@@ -493,7 +493,7 @@ export class SalesService {
         },
       },
       orderBy: { createdAt: 'asc' },
-    });
+    })) as any[];
 
     // Build monthly sales & profit grouped by month
     const monthlyMap: Record<string, { sales: number; profit: number }> = {};
@@ -560,7 +560,7 @@ export class SalesService {
     // Total stats
     const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
     const totalCost = sales.reduce((sum, s) => {
-      return sum + s.items.reduce((c, item) => c + item.qty * (item.batch?.costPrice ?? 0), 0);
+      return sum + (s.items as any[]).reduce((c: number, item: any) => c + item.qty * (item.batch?.costPrice ?? 0), 0);
     }, 0);
     const totalProfit = totalRevenue - totalCost;
 
