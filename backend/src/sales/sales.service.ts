@@ -49,12 +49,14 @@ export class SalesService {
       if (!batch) {
         throw new NotFoundException(`Batch not found: ${item.batchId}`);
       }
-      if (item.qty > batch.qty) {
+      if (dto.status !== 'DRAFT' && item.qty > batch.qty) {
         throw new BadRequestException(`Not enough stock in batch ${batch.batchNumber}`);
       }
     });
 
-    const status = dto.paid >= dto.total ? 'PAID' : dto.paid > 0 ? 'PARTIAL' : 'PENDING';
+    const status = dto.status === 'DRAFT'
+      ? 'DRAFT'
+      : dto.paid >= dto.total ? 'PAID' : dto.paid > 0 ? 'PARTIAL' : 'PENDING';
     const invoiceNumber = await this.generateInvoiceNumber();
 
     const saleCreate = this.prisma.sale.create({
@@ -63,7 +65,7 @@ export class SalesService {
         customerId: dto.customerId,
         total: dto.total,
         paid: dto.paid,
-        status,
+        status: status as any,
         representativeId: dto.representativeId || null,
         createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
         items: {
@@ -96,37 +98,44 @@ export class SalesService {
       },
     });
 
-    const batchUpdates = dto.items.map((item) =>
-      this.prisma.batch.update({
-        where: { id: item.batchId },
-        data: {
-          qty: {
-            decrement: item.qty,
+    let sale;
+    if (dto.status === 'DRAFT') {
+      sale = await saleCreate;
+    } else {
+      const batchUpdates = dto.items.map((item) =>
+        this.prisma.batch.update({
+          where: { id: item.batchId },
+          data: {
+            qty: {
+              decrement: item.qty,
+            },
           },
-        },
-      }),
-    );
+        }),
+      );
 
-    const stockMovements = dto.items.map((item) =>
-      this.prisma.stockMovement.create({
-        data: {
-          batchId: item.batchId,
-          type: 'OUT',
-          qty: item.qty,
-          reason: 'Sale',
-        },
-      }),
-    );
+      const stockMovements = dto.items.map((item) =>
+        this.prisma.stockMovement.create({
+          data: {
+            batchId: item.batchId,
+            type: 'OUT',
+            qty: item.qty,
+            reason: 'Sale',
+          },
+        }),
+      );
 
-    const [sale] = await this.prisma.$transaction([
-      saleCreate,
-      ...batchUpdates,
-      ...stockMovements,
-    ]);
+      const [createdSale] = await this.prisma.$transaction([
+        saleCreate,
+        ...batchUpdates,
+        ...stockMovements,
+      ]);
+      sale = createdSale;
+    }
 
     return {
       id: sale.id,
       customerName: sale.customer.name,
+      customerId: sale.customerId,
       total: sale.total,
       paid: sale.paid,
       status: sale.status,
@@ -138,6 +147,8 @@ export class SalesService {
       } : null,
       items: sale.items.map((item: any) => ({
         productName: item.product.name,
+        productId: item.productId,
+        batchId: item.batchId,
         batchNumber: item.batch.batchNumber,
         qty: item.qty,
         price: item.price,
@@ -173,6 +184,7 @@ export class SalesService {
         id: displayId,
         realId: sale.id,
         customerName: sale.customer.name,
+        customerId: sale.customerId,
         total: sale.total,
         paid: sale.paid,
         status: sale.status,
@@ -227,6 +239,7 @@ export class SalesService {
       id: displayId,
       realId: sale.id,
       customerName: sale.customer.name,
+      customerId: sale.customerId,
       total: sale.total,
       paid: sale.paid,
       status: sale.status,
@@ -238,6 +251,8 @@ export class SalesService {
       } : null,
       items: sale.items.map((item: any) => ({
         productName: item.product.name,
+        productId: item.productId,
+        batchId: item.batchId,
         batchNumber: item.batch.batchNumber,
         qty: item.qty,
         price: item.price,
@@ -315,34 +330,121 @@ export class SalesService {
     });
   }
 
-  async updateSaleAndInstallments(id: string, dto: { createdAt?: string; paid: number; installments?: any[] }) {
+  async updateSaleAndInstallments(id: string, dto: {
+    createdAt?: string;
+    paid: number;
+    installments?: any[];
+    items?: any[];
+    status?: string;
+    representativeId?: string;
+  }) {
     const sale = await this.prisma.sale.findUnique({
       where: { id },
+      include: { items: true },
     });
     if (!sale) {
       throw new NotFoundException('Sale not found');
     }
 
+    const itemsProvided = dto.items && dto.items.length > 0;
+    const newTotal = itemsProvided
+      ? dto.items.reduce((sum, item) => sum + (item.qty * item.price), 0)
+      : sale.total;
+
     const newPaid = dto.paid;
-    const status = newPaid >= sale.total ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+    const targetStatus = dto.status === 'DRAFT'
+      ? 'DRAFT'
+      : newPaid >= newTotal ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update the sale details
+      // 1. Revert old stock if old sale was not a DRAFT
+      if (sale.status !== 'DRAFT') {
+        for (const item of sale.items) {
+          await tx.batch.update({
+            where: { id: item.batchId },
+            data: {
+              qty: {
+                increment: item.qty,
+              },
+            },
+          });
+          await tx.stockMovement.create({
+            data: {
+              batchId: item.batchId,
+              type: 'IN',
+              qty: item.qty,
+              reason: `Reverted for Edit: ${sale.id}`,
+            },
+          });
+        }
+      }
+
+      // 2. Deduct new stock if new status is not a DRAFT
+      if (targetStatus !== 'DRAFT') {
+        const finalItems = itemsProvided ? dto.items : sale.items;
+        for (const item of finalItems) {
+          const batch = await tx.batch.findUnique({
+            where: { id: item.batchId },
+          });
+          if (!batch) {
+            throw new NotFoundException(`Batch not found: ${item.batchId}`);
+          }
+          if (item.qty > batch.qty) {
+            throw new BadRequestException(`Not enough stock in batch ${batch.batchNumber}`);
+          }
+          await tx.batch.update({
+            where: { id: item.batchId },
+            data: {
+              qty: {
+                decrement: item.qty,
+              },
+            },
+          });
+          await tx.stockMovement.create({
+            data: {
+              batchId: item.batchId,
+              type: 'OUT',
+              qty: item.qty,
+              reason: `Sale Edit: ${sale.id}`,
+            },
+          });
+        }
+      }
+
+      // 3. Update items in DB
+      if (itemsProvided) {
+        await tx.saleItem.deleteMany({
+          where: { saleId: id },
+        });
+        await tx.saleItem.createMany({
+          data: dto.items!.map((item: any) => ({
+            saleId: id,
+            productId: item.productId,
+            batchId: item.batchId,
+            qty: item.qty,
+            price: item.price,
+          })),
+        });
+      }
+
+      // 4. Update the sale details
       const updatedSale = await tx.sale.update({
         where: { id },
         data: {
+          total: newTotal,
           paid: newPaid,
-          status,
+          status: targetStatus as any,
+          representativeId: dto.representativeId === undefined ? undefined : (dto.representativeId || null),
           createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
         },
       });
 
-      // 2. Clear old installments
+      // 5. Clear old installments
       await tx.installment.deleteMany({
         where: { saleId: id },
       });
 
-      // 3. Insert newly scheduled installments
+      // 6. Insert newly scheduled installments
       if (dto.installments && dto.installments.length > 0) {
         await tx.installment.createMany({
           data: dto.installments.map((inst: any) => ({
@@ -381,7 +483,7 @@ export class SalesService {
   async getDashboardStats() {
     // Get all sales with items for calculation
     const sales = await this.prisma.sale.findMany({
-      where: { status: { not: 'CANCELLED' } },
+      where: { status: { notIn: ['CANCELLED', 'DRAFT'] } },
       include: {
         items: {
           include: {

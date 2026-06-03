@@ -32,6 +32,8 @@ import DatePicker from '../components/DatePicker';
 
 interface InvoiceItem {
   productName: string;
+  productId?: string;
+  batchId?: string;
   batchNumber: string;
   qty: number;
   price: number;
@@ -49,9 +51,10 @@ interface InvoiceInstallment {
 interface Invoice {
   id: string;
   customerName: string;
+  customerId?: string;
   total: number;
   paid: number;
-  status: 'PENDING' | 'PAID' | 'PARTIAL';
+  status: 'PENDING' | 'PAID' | 'PARTIAL' | 'DRAFT';
   createdAt: string;
   items: InvoiceItem[];
   installments?: InvoiceInstallment[];
@@ -536,6 +539,12 @@ export default function Sales() {
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
+  const selectedCustomerDebt = selectedCustomerId 
+    ? sales
+        .filter(s => (s.customerId === selectedCustomerId || s.customerName === selectedCustomer?.name) && s.status !== 'DRAFT')
+        .reduce((sum, s) => sum + Math.max(0, s.total - s.paid), 0)
+    : 0;
+
   useEffect(() => {
     if (selectedCustomer) {
       if (selectedCustomer.representativeId) {
@@ -599,6 +608,14 @@ export default function Sales() {
   const [productSearch, setProductSearch] = useState('');
   const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
 
+  const [editSelectedProductId, setEditSelectedProductId] = useState('');
+  const [editSelectedBatchId, setEditSelectedBatchId] = useState('');
+  const [editQty, setEditQty] = useState(1);
+  const [editPrice, setEditPrice] = useState(0);
+  const [editProductSearch, setEditProductSearch] = useState('');
+  const [isEditProductDropdownOpen, setIsEditProductDropdownOpen] = useState(false);
+  const [editFefoBatches, setEditFefoBatches] = useState<Batch[]>([]);
+
   const filteredProductsForSelect = products.filter(p =>
     p.name.toLowerCase().includes(productSearch.toLowerCase())
   );
@@ -608,6 +625,7 @@ export default function Sales() {
   const [qty, setQty] = useState(1);
   const [price, setPrice] = useState(0);
 
+  const [isQuote, setIsQuote] = useState(false);
   const [paidAmount, setPaidAmount] = useState(0);
   const [invoiceSuccess, setInvoiceSuccess] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -708,10 +726,12 @@ export default function Sales() {
   const [editInvoicePaid, setEditInvoicePaid] = useState(0);
   const [editInvoiceDate, setEditInvoiceDate] = useState('');
   const [editInstallmentsPlan, setEditInstallmentsPlan] = useState<{ dueDate: string; amount: string | number; notes: string }[]>([]);
+  const [editCart, setEditCart] = useState<CartItem[]>([]);
+  const editCartTotal = editCart.reduce((sum, item) => sum + (item.qty * item.price), 0);
 
   const addInstallmentToEditPlan = () => {
     if (!selectedInvoice) return;
-    const remaining = Math.max(0, selectedInvoice.total - editInvoicePaid) - editInstallmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0);
+    const remaining = Math.max(0, editCartTotal - editInvoicePaid) - editInstallmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0);
     setEditInstallmentsPlan([
       ...editInstallmentsPlan,
       { dueDate: getTodayStr(), amount: remaining > 0 ? remaining : '', notes: '' }
@@ -731,7 +751,7 @@ export default function Sales() {
   const handleSaveInvoiceUpdate = async () => {
     if (!selectedInvoice) return;
     
-    const remainingAmount = selectedInvoice.total - editInvoicePaid;
+    const remainingAmount = editCartTotal - editInvoicePaid;
     const installmentsTotal = editInstallmentsPlan.reduce((sum, inst) => sum + parseDigits(inst.amount), 0);
     
     if (editInstallmentsPlan.length > 0 && Math.abs(remainingAmount - installmentsTotal) > 0.01) {
@@ -748,7 +768,13 @@ export default function Sales() {
           dueDate: i.dueDate,
           amount: parseDigits(i.amount),
           notes: i.notes
-        }))
+        })),
+        items: editCart.map(item => ({
+          productId: item.productId,
+          batchId: item.batchId,
+          qty: item.qty,
+          price: item.price,
+        })),
       });
       
       alert('تم تعديل الفاتورة وجدولة الأقساط بنجاح!');
@@ -898,6 +924,24 @@ export default function Sales() {
     }
     setQty(1);
   }, [selectedProductId]);
+
+  useEffect(() => {
+    if (editSelectedProductId) {
+      const suggested = getFEFOBatches(editSelectedProductId);
+      setEditFefoBatches(suggested);
+      if (suggested.length > 0) {
+        setEditSelectedBatchId(suggested[0].id);
+        setEditPrice(Math.round(suggested[0].costPrice * 1.25));
+      } else {
+        setEditSelectedBatchId('');
+        setEditPrice(0);
+      }
+    } else {
+      setEditFefoBatches([]);
+      setEditSelectedBatchId('');
+    }
+    setEditQty(1);
+  }, [editSelectedProductId]);
 
   const handleAddToCart = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1382,28 +1426,33 @@ export default function Sales() {
           price: item.price,
         })),
         total: cartTotal,
-        paid: paidAmount,
+        paid: isQuote ? 0 : paidAmount,
         representativeId: selectedRepId || undefined,
         createdAt: new Date(invoiceDate).toISOString(),
-        installments: usePaymentPlan ? installmentsPlan.map(i => ({
+        installments: !isQuote && usePaymentPlan ? installmentsPlan.map(i => ({
           dueDate: i.dueDate,
           amount: parseDigits(i.amount),
           notes: i.notes
         })) : undefined,
+        status: isQuote ? 'DRAFT' : undefined,
       });
 
       setInvoiceNumber(response.data.id);
       setInvoiceSuccess(true);
 
       useActivityStore.getState().logActivity(
-        'فاتورة مبيعات جديدة',
-        `تم إصدار فاتورة مبيعات رقم ${response.data.id} للعميل ${selectedCustomer?.name || ''} بقيمة ${cartTotal.toLocaleString()} SDG (المدفوع: ${paidAmount.toLocaleString()} SDG)`
+        isQuote ? 'عرض سعر جديد' : 'فاتورة مبيعات جديدة',
+        isQuote 
+          ? `تم إصدار عرض سعر رقم ${response.data.id} للعميل ${selectedCustomer?.name || ''} بقيمة ${cartTotal.toLocaleString()} SDG`
+          : `تم إصدار فاتورة مبيعات رقم ${response.data.id} للعميل ${selectedCustomer?.name || ''} بقيمة ${cartTotal.toLocaleString()} SDG (المدفوع: ${paidAmount.toLocaleString()} SDG)`
       );
 
-      // Decrement batch quantities in the local inventory store
-      cart.forEach((item: CartItem) => {
-        decrementBatchQty(item.batchId, item.qty);
-      });
+      // Decrement batch quantities in the local inventory store ONLY if not a quote
+      if (!isQuote) {
+        cart.forEach((item: CartItem) => {
+          decrementBatchQty(item.batchId, item.qty);
+        });
+      }
 
       // Reload sales from server
       const { data: updatedSales } = await apiClient.get<Invoice[]>('/sales');
@@ -1420,6 +1469,7 @@ export default function Sales() {
       setInvoiceDate(getTodayStr()); // Reset to today's date
       setUsePaymentPlan(false);
       setInstallmentsPlan([]);
+      setIsQuote(false);
       setIssuingInvoice(false);
 
       setTimeout(() => {
@@ -1465,10 +1515,11 @@ export default function Sales() {
     }
   };
 
-  const invoiceCount = sales.length;
-  const totalSalesAmount = sales.reduce((sum: number, sale: Invoice) => sum + sale.total, 0);
-  const totalPaidAmount = sales.reduce((sum: number, sale: Invoice) => sum + sale.paid, 0);
-  const totalOutstanding = sales.reduce((sum: number, sale: Invoice) => sum + Math.max(0, sale.total - sale.paid), 0);
+  const activeSales = sales.filter((s) => s.status !== 'DRAFT');
+  const invoiceCount = activeSales.length;
+  const totalSalesAmount = activeSales.reduce((sum: number, sale: Invoice) => sum + sale.total, 0);
+  const totalPaidAmount = activeSales.reduce((sum: number, sale: Invoice) => sum + sale.paid, 0);
+  const totalOutstanding = activeSales.reduce((sum: number, sale: Invoice) => sum + Math.max(0, sale.total - sale.paid), 0);
 
   const closeIssueModal = () => {
     setIssuingInvoice(false);
@@ -1493,9 +1544,10 @@ export default function Sales() {
           <span className={`text-xs font-bold px-2 py-1 rounded-full ${
             sale.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : 
             sale.status === 'PARTIAL' ? 'bg-amber-500/10 text-amber-500' : 
+            sale.status === 'DRAFT' ? 'bg-cyan-500/10 text-cyan-500' :
             'bg-gray-500/10 text-gray-500'
           }`}>
-            {sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : 'معلق'}
+            {sale.status === 'PAID' ? 'مدفوع' : sale.status === 'PARTIAL' ? 'جزئي' : sale.status === 'DRAFT' ? 'عرض سعر' : 'معلق'}
           </span>
           <div className="text-left">
             <p className="text-sm font-bold text-[var(--text-primary)]">{sale.customerName}</p>
@@ -1569,12 +1621,15 @@ export default function Sales() {
         <div className="max-w-5xl mx-auto space-y-6 animate-fade-in-slide w-full" dir="rtl">
           
           {/* 🌟 شريط الحالة المتوهج والفاخر في الأعلى */}
+          {/* 🌟 شريط الحالة المتوهج والفاخر في الأعلى */}
           <div className={`relative overflow-hidden rounded-3xl border p-6 transition-all duration-300 shadow-xl ${
             selectedInvoice.status === 'PAID' 
               ? 'bg-gradient-to-r from-emerald-500/10 via-emerald-500/[0.02] to-transparent border-emerald-500/20 shadow-emerald-500/5' 
               : selectedInvoice.status === 'PARTIAL' 
                 ? 'bg-gradient-to-r from-amber-500/10 via-amber-500/[0.02] to-transparent border-amber-500/20 shadow-amber-500/5' 
-                : 'bg-gradient-to-r from-slate-500/10 via-slate-500/[0.02] to-transparent border-slate-500/20 shadow-slate-500/5'
+                : selectedInvoice.status === 'DRAFT'
+                  ? 'bg-gradient-to-r from-cyan-500/10 via-cyan-500/[0.02] to-transparent border-cyan-500/20 shadow-cyan-500/5'
+                  : 'bg-gradient-to-r from-slate-500/10 via-slate-500/[0.02] to-transparent border-slate-500/20 shadow-slate-500/5'
           }`}>
             <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.02] blur-2xl pointer-events-none rounded-full" />
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
@@ -1582,6 +1637,7 @@ export default function Sales() {
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ${
                   selectedInvoice.status === 'PAID' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
                   selectedInvoice.status === 'PARTIAL' ? 'bg-amber-500 text-white shadow-amber-500/20' :
+                  selectedInvoice.status === 'DRAFT' ? 'bg-cyan-500 text-white shadow-cyan-500/20' :
                   'bg-slate-500 text-white shadow-slate-500/20'
                 }`}>
                   <FileText className="w-6 h-6" />
@@ -1594,27 +1650,30 @@ export default function Sales() {
                     </span>
                   </div>
                   <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] mt-1">
-                    فاتورة مبيعات: <span className="text-emerald-600 dark:text-emerald-400">{selectedInvoice.customerName}</span>
+                    {selectedInvoice.status === 'DRAFT' ? 'عرض سعر / مسودة: ' : 'فاتورة مبيعات: '}<span className="text-emerald-600 dark:text-emerald-400">{selectedInvoice.customerName}</span>
                   </h1>
                 </div>
               </div>
 
               {/* شارة الحالة المضيئة */}
               <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-[var(--text-secondary)]">حالة السداد:</span>
+                <span className="text-xs font-bold text-[var(--text-secondary)]">حالة الفاتورة:</span>
                 <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black border transition-all duration-300 shadow-md ${
                   selectedInvoice.status === 'PAID' 
                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
                     : selectedInvoice.status === 'PARTIAL' 
                       ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400' 
-                      : 'bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400'
+                      : selectedInvoice.status === 'DRAFT'
+                        ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-600 dark:text-cyan-400'
+                        : 'bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400'
                 }`}>
                   <span className={`w-2.5 h-2.5 rounded-full ${
                     selectedInvoice.status === 'PAID' ? 'bg-emerald-500 animate-pulse' :
                     selectedInvoice.status === 'PARTIAL' ? 'bg-amber-500 animate-pulse' :
+                    selectedInvoice.status === 'DRAFT' ? 'bg-cyan-500 animate-pulse' :
                     'bg-slate-500'
                   }`} />
-                  {selectedInvoice.status === 'PAID' ? 'مدفوعة بالكامل' : selectedInvoice.status === 'PARTIAL' ? 'مدفوعة جزئياً (أقساط)' : 'معلقة / غير مسددة'}
+                  {selectedInvoice.status === 'PAID' ? 'مدفوعة بالكامل' : selectedInvoice.status === 'PARTIAL' ? 'مدفوعة جزئياً (أقساط)' : selectedInvoice.status === 'DRAFT' ? 'عرض سعر (مسودة)' : 'معلق / غير مسددة'}
                 </span>
               </div>
             </div>
@@ -1649,6 +1708,20 @@ export default function Sales() {
                         amount: inst.amount,
                         notes: inst.notes || ''
                       })) || []
+                    );
+                    setEditCart(
+                      selectedInvoice.items.map(item => {
+                        const b = batches.find(batch => batch.batchNumber === item.batchNumber && batch.productId === item.productId);
+                        return {
+                          productId: item.productId || '',
+                          productName: item.productName,
+                          batchId: item.batchId || b?.id || '',
+                          batchNumber: item.batchNumber,
+                          qty: item.qty,
+                          price: item.price,
+                          costPrice: b?.costPrice || 0,
+                        };
+                      })
                     );
                   }}
                   className="flex items-center gap-1.5 px-4 py-2.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-2xl text-xs font-black transition-all hover:-translate-y-0.5 active:translate-y-0"
@@ -1781,7 +1854,7 @@ export default function Sales() {
                 <div className="grid grid-cols-3 gap-3 text-sm pr-3">
                   <div className="p-4 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-center shadow-sm">
                     <p className="text-[10px] sm:text-xs text-[var(--text-secondary)] font-semibold mb-1">إجمالي الفاتورة</p>
-                    <p className="font-mono font-black text-sm sm:text-base text-[var(--text-primary)]">{selectedInvoice.total.toLocaleString('en-US')} SDG</p>
+                    <p className="font-mono font-black text-sm sm:text-base text-[var(--text-primary)]">{editCartTotal.toLocaleString('en-US')} SDG</p>
                   </div>
                   <div className="p-4 rounded-2xl bg-emerald-500/[0.04] border border-emerald-500/20 text-center shadow-sm">
                     <p className="text-[10px] sm:text-xs text-emerald-600 font-semibold mb-1">المدفوع المعدل</p>
@@ -1789,12 +1862,195 @@ export default function Sales() {
                   </div>
                   <div className="p-4 rounded-2xl bg-rose-500/[0.04] border border-rose-500/20 text-center shadow-sm">
                     <p className="text-[10px] sm:text-xs text-rose-500 font-semibold mb-1">المتبقي للاستحقاق</p>
-                    <p className="font-mono font-black text-sm sm:text-base text-rose-500">{Math.max(0, selectedInvoice.total - editInvoicePaid).toLocaleString('en-US')} SDG</p>
+                    <p className="font-mono font-black text-sm sm:text-base text-rose-500">{Math.max(0, editCartTotal - editInvoicePaid).toLocaleString('en-US')} SDG</p>
+                  </div>
+                </div>
+
+                {/* 📦 تعديل أصناف الفاتورة */}
+                <div className="space-y-4 border-t border-[var(--border-color)] pt-5 pr-3 text-right">
+                  <div className="flex items-center gap-2">
+                    <ShoppingCart className="w-4.5 h-4.5 text-cyan-500" />
+                    <span className="text-sm font-black text-[var(--text-primary)]">تعديل أصناف الفاتورة</span>
+                  </div>
+
+                  {/* إضافة صنف جديد أثناء التعديل */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end bg-[var(--bg-primary)]/40 p-4 rounded-2xl border border-[var(--border-color)]/70">
+                    <div className="sm:col-span-2 space-y-1 relative">
+                      <label className="block text-[10px] font-bold text-[var(--text-secondary)]">البحث عن منتج لإضافته</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={isEditProductDropdownOpen ? editProductSearch : (products.find(p => p.id === editSelectedProductId)?.name || '')}
+                          placeholder="ابحث باسم المنتج..."
+                          onFocus={() => {
+                            setEditProductSearch('');
+                            setIsEditProductDropdownOpen(true);
+                          }}
+                          onChange={(e) => {
+                            setEditProductSearch(e.target.value);
+                            setIsEditProductDropdownOpen(true);
+                          }}
+                          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-[var(--text-primary)] outline-none pr-8 text-right text-xs focus:border-cyan-500/50 h-10"
+                        />
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-[var(--text-secondary)]">
+                          <Search className="w-3.5 h-3.5" />
+                        </div>
+                        {isEditProductDropdownOpen && (
+                          <div className="absolute z-50 w-full mt-1.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl max-h-48 overflow-y-auto">
+                            {products.filter(p => p.name.toLowerCase().includes(editProductSearch.toLowerCase())).length === 0 ? (
+                              <div className="text-center py-2.5 text-[10px] text-[var(--text-secondary)]">لا توجد منتجات مطابقة</div>
+                            ) : (
+                              products.filter(p => p.name.toLowerCase().includes(editProductSearch.toLowerCase())).map((p) => (
+                                <button
+                                  type="button"
+                                  key={p.id}
+                                  onClick={() => {
+                                    setEditSelectedProductId(p.id);
+                                    setIsEditProductDropdownOpen(false);
+                                  }}
+                                  className="w-full text-right px-3.5 py-2 hover:bg-[var(--border-color)]/30 text-[var(--text-primary)] text-xs transition-colors block border-b border-[var(--border-color)]/20 last:border-0"
+                                >
+                                  {p.name}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {isEditProductDropdownOpen && (
+                        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsEditProductDropdownOpen(false)} />
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-[var(--text-secondary)]">التشغيلة (Batch)</label>
+                      <select
+                        value={editSelectedBatchId}
+                        onChange={(e) => {
+                          setEditSelectedBatchId(e.target.value);
+                          const sb = batches.find(b => b.id === e.target.value);
+                          if (sb) setEditPrice(Math.round(sb.costPrice * 1.25));
+                        }}
+                        disabled={editFefoBatches.length === 0}
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-[var(--text-primary)] outline-none text-xs h-10"
+                      >
+                        <option value="">اختر التشغيلة</option>
+                        {editFefoBatches.map((b, index) => (
+                          <option key={b.id} value={b.id}>
+                            {b.batchNumber} (المتاح: {b.qty}) {index === 0 ? ' [FEFO ⭐]' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-[var(--text-secondary)]">الكمية</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={editQty}
+                          onChange={(e) => setEditQty(Number(e.target.value))}
+                          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-2 text-[var(--text-primary)] outline-none text-xs text-center h-10"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-[var(--text-secondary)]">سعر البيع</label>
+                        <input
+                          type="number"
+                          min={0.1}
+                          step="any"
+                          value={editPrice}
+                          onChange={(e) => setEditPrice(Number(e.target.value))}
+                          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-2 text-[var(--text-primary)] outline-none text-xs text-center h-10"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!editSelectedProductId || !editSelectedBatchId || editQty <= 0) return;
+                          const prod = products.find(p => p.id === editSelectedProductId);
+                          const batch = batches.find(b => b.id === editSelectedBatchId);
+                          if (!prod || !batch) return;
+                          if (editQty > batch.qty) {
+                            alert(`الكمية المطلوبة تتجاوز المتاح في هذه التشغيلة (${batch.qty} قطعة)`);
+                            return;
+                          }
+                          const item: CartItem = {
+                            productId: prod.id,
+                            productName: prod.name,
+                            batchId: batch.id,
+                            batchNumber: batch.batchNumber,
+                            qty: editQty,
+                            price: editPrice,
+                            costPrice: batch.costPrice
+                          };
+                          const existing = editCart.find(i => i.batchId === batch.id);
+                          if (existing) {
+                            setEditCart(editCart.map(i => i.batchId === batch.id ? { ...i, qty: i.qty + editQty } : i));
+                          } else {
+                            setEditCart([...editCart, item]);
+                          }
+                          setEditSelectedProductId('');
+                          setEditSelectedBatchId('');
+                          setEditQty(1);
+                        }}
+                        className="w-full bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-bold text-xs h-10 transition-colors cursor-pointer"
+                      >
+                        إضافة صنف
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* قائمة الأصناف المعدلة */}
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {editCart.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-center text-xs text-[var(--text-secondary)]">الفاتورة فارغة، يرجى إضافة أصناف.</div>
+                    ) : (
+                      editCart.map((item) => (
+                        <div key={item.batchId} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--bg-primary)] p-3 border border-[var(--border-color)]/50">
+                          <div className="space-y-1 text-right flex-1">
+                            <p className="font-semibold text-xs text-[var(--text-primary)]">{item.productName}</p>
+                            <p className="text-[var(--text-secondary)] text-[10px]">{item.batchNumber} • {item.qty} x {item.price} SDG</p>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.qty}
+                              onChange={(e) => {
+                                const newQty = Number(e.target.value);
+                                if (newQty > 0) {
+                                  const batch = batches.find(b => b.id === item.batchId);
+                                  if (batch && newQty > batch.qty) {
+                                    alert(`الكمية المطلوبة تتجاوز المتاح في هذه التشغيلة (${batch.qty} قطعة)`);
+                                    return;
+                                  }
+                                  setEditCart(editCart.map(i => i.batchId === item.batchId ? { ...i, qty: newQty } : i));
+                                }
+                              }}
+                              className="w-14 text-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 text-[var(--text-primary)] font-bold text-[11px]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditCart(editCart.filter(i => i.batchId !== item.batchId))}
+                              className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              حذف
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
                 {/* 📝 جدولة الأقساط والدفعات المستحقة */}
-                {selectedInvoice.total - editInvoicePaid > 0 && (
+                {editCartTotal - editInvoicePaid > 0 && (
                   <div className="space-y-4 border-t border-[var(--border-color)] pt-5 pr-3">
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
@@ -2841,7 +3097,26 @@ export default function Sales() {
                           <p className="font-medium text-[var(--text-primary)]">{item.productName}</p>
                           <p className="text-[var(--text-secondary)] text-xs">{item.batchNumber} • {item.qty} x {item.price} SDG</p>
                         </div>
-                        <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold h-11">حذف</button>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            value={item.qty}
+                            onChange={(e) => {
+                              const newQty = Number(e.target.value);
+                              if (newQty > 0) {
+                                const batch = batches.find(b => b.id === item.batchId);
+                                if (batch && newQty > batch.qty) {
+                                  alert(`الكمية المطلوبة تتجاوز المتاح في هذه التشغيلة (${batch.qty} قطعة)`);
+                                  return;
+                                }
+                                updateCartQty(item.batchId, newQty);
+                              }
+                            }}
+                            className="w-16 text-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 text-[var(--text-primary)] font-bold text-xs"
+                          />
+                          <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold h-11">حذف</button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2850,9 +3125,37 @@ export default function Sales() {
 
               <div className="glass-card p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10 space-y-5">
                 <div className="space-y-3 text-sm text-[var(--text-secondary)]">
+                  {selectedCustomer && (
+                    <>
+                      <div className="flex justify-between">
+                        <span>المديونية السابقة للعميل</span>
+                        <strong className="text-amber-500 text-sm font-bold">{selectedCustomerDebt.toLocaleString('en-US')} SDG</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>سقف الائتمان المسموح</span>
+                        <strong className="text-blue-500 text-sm font-bold">{selectedCustomer.creditLimit.toLocaleString('en-US')} SDG</strong>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between"><span>إجمالي الفاتورة</span><strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong></div>
                   <div className="flex justify-between"><span>المدفوع حالياً</span><strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong></div>
                   <div className="flex justify-between border-t border-[var(--border-color)] pt-3"><span className="font-semibold">المتبقي</span><strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong></div>
+                </div>
+                <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3 text-right">
+                  <span className="text-sm font-bold text-[var(--text-primary)]">حفظ كعرض سعر (مسودة)</span>
+                  <input
+                    type="checkbox"
+                    checked={isQuote}
+                    onChange={(e) => {
+                      setIsQuote(e.target.checked);
+                      if (e.target.checked) {
+                        setPaidAmount(0);
+                        setUsePaymentPlan(false);
+                        setInstallmentsPlan([]);
+                      }
+                    }}
+                    className="w-5 h-5 text-emerald-600 border-[var(--border-color)] rounded focus:ring-emerald-500 cursor-pointer"
+                  />
                 </div>
                 <div className="space-y-1.5 text-right">
                   <label className="block text-xs font-semibold text-[var(--text-secondary)]">تاريخ الفاتورة</label>
@@ -2861,10 +3164,12 @@ export default function Sales() {
                     onChange={setInvoiceDate}
                   />
                 </div>
-                <div className="space-y-1.5 text-right">
-                  <label className="block text-xs font-semibold text-[var(--text-secondary)]">المبلغ المدفوع</label>
-                  <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => { setPaidAmount(Number(e.target.value)); setUsePaymentPlan(false); setInstallmentsPlan([]); }} placeholder="المبلغ المدفوع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
-                </div>
+                {!isQuote && (
+                  <div className="space-y-1.5 text-right">
+                    <label className="block text-xs font-semibold text-[var(--text-secondary)]">المبلغ المدفوع</label>
+                    <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => { setPaidAmount(Number(e.target.value)); setUsePaymentPlan(false); setInstallmentsPlan([]); }} placeholder="المبلغ المدفوع" className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none h-11" />
+                  </div>
+                )}
                 {cartTotal - paidAmount > 0 && (
                   <div className="space-y-4 border-t border-[var(--border-color)] pt-4 text-right">
                     <div className="flex items-center justify-between">
@@ -3200,7 +3505,26 @@ export default function Sales() {
                             <p className="font-medium text-[var(--text-primary)]">{item.productName}</p>
                             <p className="text-[var(--text-secondary)] text-xs">{item.batchNumber} • {item.qty} x {item.price} SDG</p>
                           </div>
-                          <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold">حذف</button>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.qty}
+                              onChange={(e) => {
+                                const newQty = Number(e.target.value);
+                                if (newQty > 0) {
+                                  const batch = batches.find(b => b.id === item.batchId);
+                                  if (batch && newQty > batch.qty) {
+                                    alert(`الكمية المطلوبة تتجاوز المتاح في هذه التشغيلة (${batch.qty} قطعة)`);
+                                    return;
+                                  }
+                                  updateCartQty(item.batchId, newQty);
+                                }
+                              }}
+                              className="w-16 text-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 text-[var(--text-primary)] font-bold text-xs"
+                            />
+                            <button onClick={() => removeFromCart(item.batchId)} className="rounded-2xl bg-rose-500/10 px-3 py-2 text-rose-500 text-xs font-semibold">حذف</button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -3212,12 +3536,40 @@ export default function Sales() {
                 <div className="glass-card p-7 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] shadow-lg shadow-black/10">
                   <div className="flex items-center justify-between mb-5"><h4 className="text-base font-semibold text-[var(--text-primary)]">الملخص</h4><span className="text-xs text-[var(--text-secondary)]">{cart.length} صنف</span></div>
                   <div className="space-y-5 text-sm text-[var(--text-secondary)]">
+                    {selectedCustomer && (
+                      <>
+                        <div className="flex justify-between">
+                          <span>المديونية السابقة للعميل</span>
+                          <strong className="text-amber-500 text-base font-bold">{selectedCustomerDebt.toLocaleString('en-US')} SDG</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>سقف الائتمان المسموح</span>
+                          <strong className="text-blue-500 text-base font-bold">{selectedCustomer.creditLimit.toLocaleString('en-US')} SDG</strong>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between"><span>إجمالي الفاتورة</span><strong className="text-[var(--text-primary)] text-base">{cartTotal.toLocaleString('en-US')} SDG</strong></div>
                     <div className="flex justify-between"><span>المدفوع حالياً</span><strong className="text-emerald-500 text-base">{paidAmount.toLocaleString('en-US')} SDG</strong></div>
                     <div className="flex justify-between border-t border-[var(--border-color)] pt-5"><span className="font-semibold">المتبقي</span><strong className="font-semibold text-rose-500 text-base">{Math.max(0, cartTotal - paidAmount).toLocaleString('en-US')} SDG</strong></div>
                   </div>
                 </div>
                 <div className="glass-card p-7 rounded-3xl border border-[var(--glass-border)] bg-[var(--bg-secondary)] space-y-5 shadow-lg shadow-black/10">
+                  <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3 text-right">
+                    <span className="text-sm font-bold text-[var(--text-primary)]">حفظ كعرض سعر (مسودة)</span>
+                    <input
+                      type="checkbox"
+                      checked={isQuote}
+                      onChange={(e) => {
+                        setIsQuote(e.target.checked);
+                        if (e.target.checked) {
+                          setPaidAmount(0);
+                          setUsePaymentPlan(false);
+                          setInstallmentsPlan([]);
+                        }
+                      }}
+                      className="w-5 h-5 text-emerald-600 border-[var(--border-color)] rounded focus:ring-emerald-500 cursor-pointer"
+                    />
+                  </div>
                   <div className="space-y-2 text-sm text-right">
                     <label className="block text-[var(--text-secondary)] font-semibold">تاريخ الفاتورة</label>
                     <DatePicker
@@ -3225,10 +3577,12 @@ export default function Sales() {
                       onChange={setInvoiceDate}
                     />
                   </div>
-                  <div className="space-y-2 text-sm text-right">
-                    <label className="block text-[var(--text-secondary)] font-semibold">المبلغ المدفوع</label>
-                    <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => { setPaidAmount(Number(e.target.value)); setUsePaymentPlan(false); setInstallmentsPlan([]); }} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
-                  </div>
+                  {!isQuote && (
+                    <div className="space-y-2 text-sm text-right">
+                      <label className="block text-[var(--text-secondary)] font-semibold">المبلغ المدفوع</label>
+                      <input type="number" min={0} step="any" value={paidAmount} onChange={(e) => { setPaidAmount(Number(e.target.value)); setUsePaymentPlan(false); setInstallmentsPlan([]); }} className="w-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 text-[var(--text-primary)] outline-none" />
+                    </div>
+                  )}
                   {cartTotal - paidAmount > 0 && (
                     <div className="space-y-4 border-t border-[var(--border-color)] pt-4 text-right">
                       <div className="flex items-center justify-between">

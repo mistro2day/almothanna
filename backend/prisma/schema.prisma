@@ -99,6 +99,7 @@ enum SaleStatus {
   PAID
   PARTIAL
   CANCELLED
+  DRAFT
 }
 
 model Sale {
