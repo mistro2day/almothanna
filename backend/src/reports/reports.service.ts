@@ -595,10 +595,21 @@ export class ReportsService {
 
     const ledgerEntries: any[] = [];
 
+    const getInvoiceDisplayId = (id: string, date: Date) => {
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        return `INV-${String(date.getTime().toString().slice(-5))}`;
+      }
+      if (id.startsWith('IN-')) {
+        return id.replace('IN-', 'INV-');
+      }
+      return id;
+    };
+
     for (const sale of sales) {
+      const invNum = getInvoiceDisplayId(sale.id, sale.createdAt);
       ledgerEntries.push({
         date: sale.createdAt.toISOString().split('T')[0],
-        description: `فاتورة مبيعات رقم ${sale.id}`,
+        description: `فاتورة مبيعات رقم ${invNum}`,
         debit: sale.total,
         credit: 0,
         ref: sale.id,
@@ -608,7 +619,7 @@ export class ReportsService {
       if (sale.paid > 0) {
         ledgerEntries.push({
           date: sale.createdAt.toISOString().split('T')[0],
-          description: `سداد دفعة للفاتورة رقم ${sale.id}`,
+          description: `سداد دفعة للفاتورة رقم ${invNum}`,
           debit: 0,
           credit: sale.paid,
           ref: sale.id,
@@ -619,7 +630,7 @@ export class ReportsService {
       for (const ret of sale.returns) {
         ledgerEntries.push({
           date: ret.createdAt.toISOString().split('T')[0],
-          description: `مرتجع مبيعات للفاتورة رقم ${sale.id}`,
+          description: `مرتجع مبيعات للفاتورة رقم ${invNum}`,
           debit: 0,
           credit: ret.totalRefund,
           ref: ret.id,

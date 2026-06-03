@@ -29,6 +29,8 @@ model User {
   activities    Activity[]
   notifications Notification[]
   expenses      Expense[]
+  revenues      Revenue[]
+  fundTransactions FundTransaction[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -115,8 +117,11 @@ model Sale {
   returns          Return[]
   deliveryOrders   DeliveryOrder[]
   installments     Installment[]
+  invoiceNumber    String?         @unique // Legacy invoice serial number (e.g., SI25000031)
   representativeId String?
   representative   Representative? @relation("SaleRepresentative", fields: [representativeId], references: [id], onDelete: SetNull)
+  revenues         Revenue[]
+  fundTransactions FundTransaction[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 }
@@ -246,6 +251,7 @@ model PurchaseOrder {
   items        PurchaseItem[]
   notes        String?
   receivedDate DateTime?
+  fundTransactions FundTransaction[]
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 }
@@ -270,29 +276,33 @@ model InvoiceCounter {
 }
 
 model SupplierPayment {
-  id            String        @id @default(uuid())
-  supplierId    String
-  supplier      Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  amount        Float
-  paymentMethod PaymentMethod @default(CASH)
-  reference     String?       // رقم الحوالة أو الشيك
-  notes         String?
-  paidAt        DateTime      @default(now())
-  createdAt     DateTime      @default(now())
+  id               String            @id @default(uuid())
+  supplierId       String
+  supplier         Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  amount           Float
+  paymentMethod    PaymentMethod     @default(CASH)
+  reference        String?           // رقم الحوالة أو الشيك
+  notes            String?
+  fundTransactions FundTransaction[]
+  paidAt           DateTime          @default(now())
+  createdAt        DateTime          @default(now())
 }
 
 model CompanySettings {
-  id            String   @id @default(uuid())
-  name          String   @default("المثنى للأدوية")
-  phone         String   @default("0912345678")
-  email         String?  @default("info@almothanna.com")
-  address       String?  @default("السودان - أمدرمان")
-  logo          String?  // Base64 logo format
-  commercialReg String?  @default("12345")
-  taxNumber     String?  @default("67890")
-  currency      String   @default("SDG")
-  invoiceFooter String?  @default("شكراً لتعاملكم معنا - المثنى للأدوية")
-  updatedAt     DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  name                String   @default("المثنى للأدوية")
+  phone               String   @default("0912345678")
+  email               String?  @default("info@almothanna.com")
+  address             String?  @default("السودان - أمدرمان")
+  logo                String?  // Base64 logo format
+  commercialReg       String?  @default("12345")
+  taxNumber           String?  @default("67890")
+  currency            String   @default("SDG")
+  invoiceFooter       String?  @default("شكراً لتعاملكم معنا - المثنى للأدوية")
+  linkSalesToFund     Boolean  @default(true)
+  linkPurchasesToFund Boolean  @default(true)
+  linkExpensesToFund  Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
 }
 
 model Activity {
@@ -322,26 +332,30 @@ model ExpenseCategory {
 }
 
 model Expense {
-  id          String          @id @default(uuid())
-  amount      Float
-  description String?
-  date        DateTime        @default(now())
-  categoryId  String
-  category    ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  userId      String?
-  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id               String          @id @default(uuid())
+  amount           Float
+  description      String?
+  date             DateTime        @default(now())
+  categoryId       String
+  category         ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userId           String?
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  documentNumber   String?
+  paymentMethod    PaymentMethod   @default(CASH)
+  fundTransactions FundTransaction[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 }
 
 model Return {
-  id           String       @id @default(uuid())
-  saleId       String
-  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Restrict)
-  totalRefund  Float
-  refundToCash Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  items        ReturnItem[]
+  id               String            @id @default(uuid())
+  saleId           String
+  sale             Sale              @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  totalRefund      Float
+  refundToCash     Boolean           @default(true)
+  fundTransactions FundTransaction[]
+  createdAt        DateTime          @default(now())
+  items            ReturnItem[]
 }
 
 model ReturnItem {
@@ -355,5 +369,75 @@ model ReturnItem {
   qty        Int
   price      Float
 }
+
+enum FundTransactionType {
+  INFLOW
+  OUTFLOW
+}
+
+enum FundSource {
+  SALE
+  PURCHASE
+  EXPENSE
+  REVENUE
+  SUPPLIER_PAYMENT
+  RETURN
+  MANUAL
+}
+
+model RevenueCategory {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  revenues  Revenue[]
+  createdAt DateTime  @default(now())
+}
+
+model Revenue {
+  id               String            @id @default(uuid())
+  amount           Float
+  description      String?
+  date             DateTime          @default(now())
+  categoryId       String
+  category         RevenueCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userId           String?
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  saleId           String?
+  sale             Sale?             @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  fundTransactions FundTransaction[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model FundTransaction {
+  id                String              @id @default(uuid())
+  transactionCode   String              @unique // Code like SF25000002
+  amount            Float
+  type              FundTransactionType
+  source            FundSource
+  paymentMethod     PaymentMethod       @default(CASH)
+  reference         String?             // Check number, transfer ref, etc.
+  documentNumber    String?             // Invoice / receipt / voucher number
+  description       String?
+  date              DateTime            @default(now())
+  
+  // Relations
+  saleId            String?
+  sale              Sale?               @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  purchaseOrderId   String?
+  purchaseOrder     PurchaseOrder?      @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  expenseId         String?
+  expense           Expense?            @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  revenueId         String?
+  revenue           Revenue?            @relation(fields: [revenueId], references: [id], onDelete: SetNull)
+  supplierPaymentId String?
+  supplierPayment   SupplierPayment?    @relation(fields: [supplierPaymentId], references: [id], onDelete: SetNull)
+  returnId          String?
+  return            Return?             @relation(fields: [returnId], references: [id], onDelete: SetNull)
+
+  userId            String?
+  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt         DateTime            @default(now())
+}
+
 
 

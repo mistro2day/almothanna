@@ -20,7 +20,7 @@ export class SalesService {
       },
     });
     const num = Number(counter.nextVal);
-    return `IN-${String(num).padStart(5, '0')}`;
+    return `INV-${String(num).padStart(5, '0')}`;
   }
 
   async createSale(dto: CreateSaleDto) {
@@ -102,34 +102,88 @@ export class SalesService {
     if (dto.status === 'DRAFT') {
       sale = await saleCreate;
     } else {
-      const batchUpdates = dto.items.map((item) =>
-        this.prisma.batch.update({
-          where: { id: item.batchId },
+      sale = await this.prisma.$transaction(async (tx) => {
+        const createdSale = await tx.sale.create({
           data: {
-            qty: {
-              decrement: item.qty,
+            id: invoiceNumber,
+            customerId: dto.customerId,
+            total: dto.total,
+            paid: dto.paid,
+            status: status as any,
+            representativeId: dto.representativeId || null,
+            createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
+            items: {
+              create: dto.items.map((item) => ({
+                productId: item.productId,
+                batchId: item.batchId,
+                qty: item.qty,
+                price: item.price,
+              })),
+            },
+            installments: dto.installments && dto.installments.length > 0 ? {
+              create: dto.installments.map((inst) => ({
+                dueDate: new Date(inst.dueDate),
+                amount: inst.amount,
+                notes: inst.notes,
+                status: 'PENDING',
+              })),
+            } : undefined,
+          },
+          include: {
+            customer: true,
+            representative: true,
+            installments: true,
+            items: {
+              include: {
+                product: true,
+                batch: true,
+              },
             },
           },
-        }),
-      );
+        });
 
-      const stockMovements = dto.items.map((item) =>
-        this.prisma.stockMovement.create({
-          data: {
-            batchId: item.batchId,
-            type: 'OUT',
-            qty: item.qty,
-            reason: 'Sale',
-          },
-        }),
-      );
+        for (const item of dto.items) {
+          await tx.batch.update({
+            where: { id: item.batchId },
+            data: {
+              qty: {
+                decrement: item.qty,
+              },
+            },
+          });
 
-      const [createdSale] = await this.prisma.$transaction([
-        saleCreate,
-        ...batchUpdates,
-        ...stockMovements,
-      ]);
-      sale = createdSale;
+          await tx.stockMovement.create({
+            data: {
+              batchId: item.batchId,
+              type: 'OUT',
+              qty: item.qty,
+              reason: 'Sale',
+            },
+          });
+        }
+
+        if (dto.paid > 0) {
+          const settings = await tx.companySettings.findFirst();
+          if (!settings || settings.linkSalesToFund) {
+            const count = await tx.fundTransaction.count();
+            const yearSuffix = new Date().getFullYear().toString().slice(-2);
+            const code = `SF${yearSuffix}${String(count + 1).padStart(6, '0')}`;
+            await tx.fundTransaction.create({
+              data: {
+                transactionCode: code,
+                amount: dto.paid,
+                type: 'INFLOW',
+                source: 'SALE',
+                description: `تحصيل فاتورة مبيعات: ${invoiceNumber} للعميل: ${createdSale.customer.name}`,
+                saleId: createdSale.id,
+                date: dto.createdAt ? new Date(dto.createdAt) : undefined,
+              },
+            });
+          }
+        }
+
+        return createdSale;
+      });
     }
 
     return {
@@ -177,7 +231,7 @@ export class SalesService {
     return sales.map((sale) => {
       // For old invoices with UUID ids, generate a display id
       const displayId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sale.id)
-        ? `IN-${String(sale.createdAt.getTime().toString().slice(-5))}`
+        ? `INV-${String(sale.createdAt.getTime().toString().slice(-5))}`
         : sale.id;
 
       return {
@@ -232,7 +286,7 @@ export class SalesService {
     }
 
     const displayId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sale.id)
-      ? `IN-${String(sale.createdAt.getTime().toString().slice(-5))}`
+      ? `INV-${String(sale.createdAt.getTime().toString().slice(-5))}`
       : sale.id;
 
     return {
@@ -303,6 +357,11 @@ export class SalesService {
       }),
     );
 
+    // Delete associated fund transactions
+    const deleteFundTx = this.prisma.fundTransaction.deleteMany({
+      where: { saleId: id },
+    });
+
     // Delete the sale (Prisma cascade delete handles SaleItems)
     const deleteSale = this.prisma.sale.delete({
       where: { id },
@@ -311,6 +370,7 @@ export class SalesService {
     await this.prisma.$transaction([
       ...batchUpdates,
       ...stockMovements,
+      deleteFundTx,
       deleteSale,
     ]);
 
@@ -458,6 +518,33 @@ export class SalesService {
         });
       }
 
+      // 7. Clear old fund transactions and record the new paid amount if linked and greater than 0
+      await tx.fundTransaction.deleteMany({
+        where: { saleId: id },
+      });
+
+      if (newPaid > 0 && targetStatus !== 'DRAFT') {
+        const settings = await tx.companySettings.findFirst();
+        if (!settings || settings.linkSalesToFund) {
+          const count = await tx.fundTransaction.count();
+          const yearSuffix = new Date().getFullYear().toString().slice(-2);
+          const code = `SF${yearSuffix}${String(count + 1).padStart(6, '0')}`;
+          const customer = await tx.customer.findUnique({ where: { id: sale.customerId } });
+          
+          await tx.fundTransaction.create({
+            data: {
+              transactionCode: code,
+              amount: newPaid,
+              type: 'INFLOW',
+              source: 'SALE',
+              description: `تحصيل فاتورة مبيعات معدلة: ${sale.id} للعميل: ${customer?.name || ''}`,
+              saleId: sale.id,
+              date: dto.createdAt ? new Date(dto.createdAt) : undefined,
+            },
+          });
+        }
+      }
+
       return updatedSale;
     });
   }
@@ -465,18 +552,40 @@ export class SalesService {
   async paySale(id: string, amount: number) {
     const sale = await this.prisma.sale.findUnique({
       where: { id },
+      include: { customer: true },
     });
     if (!sale) {
       throw new NotFoundException('Sale not found');
     }
     const newPaid = sale.paid + amount;
     const status = newPaid >= sale.total ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
-    return this.prisma.sale.update({
-      where: { id },
-      data: {
-        paid: newPaid,
-        status,
-      },
+    
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.sale.update({
+        where: { id },
+        data: {
+          paid: newPaid,
+          status,
+        },
+      });
+
+      const settings = await tx.companySettings.findFirst();
+      if (!settings || settings.linkSalesToFund) {
+        const count = await tx.fundTransaction.count();
+        const yearSuffix = new Date().getFullYear().toString().slice(-2);
+        const code = `SF${yearSuffix}${String(count + 1).padStart(6, '0')}`;
+        await tx.fundTransaction.create({
+          data: {
+            transactionCode: code,
+            amount: amount,
+            type: 'INFLOW',
+            source: 'SALE',
+            description: `تحصيل دفعة من فاتورة مبيعات: ${sale.id} للعميل: ${sale.customer.name}`,
+            saleId: sale.id,
+          },
+        });
+      }
+      return updated;
     });
   }
 
@@ -575,7 +684,7 @@ export class SalesService {
   async payInstallment(id: string, amount: number) {
     const installment = await this.prisma.installment.findUnique({
       where: { id },
-      include: { sale: true },
+      include: { sale: { include: { customer: true } } },
     });
     if (!installment) {
       throw new NotFoundException('Installment not found');
@@ -584,29 +693,48 @@ export class SalesService {
     const remainingForInstallment = installment.amount - newPaidAmount;
     const status = remainingForInstallment <= 0 ? 'PAID' : 'PARTIAL';
 
-    // Update the installment
-    const updatedInstallment = await this.prisma.installment.update({
-      where: { id },
-      data: {
-        paidAmount: newPaidAmount,
-        status,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // Update the installment
+      const updatedInstallment = await tx.installment.update({
+        where: { id },
+        data: {
+          paidAmount: newPaidAmount,
+          status,
+        },
+      });
+
+      // Also update the parent Sale paid amount
+      const sale = installment.sale;
+      const newSalePaid = sale.paid + amount;
+      const saleStatus = newSalePaid >= sale.total ? 'PAID' : newSalePaid > 0 ? 'PARTIAL' : 'PENDING';
+
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: {
+          paid: newSalePaid,
+          status: saleStatus,
+        },
+      });
+
+      const settings = await tx.companySettings.findFirst();
+      if (!settings || settings.linkSalesToFund) {
+        const count = await tx.fundTransaction.count();
+        const yearSuffix = new Date().getFullYear().toString().slice(-2);
+        const code = `SF${yearSuffix}${String(count + 1).padStart(6, '0')}`;
+        await tx.fundTransaction.create({
+          data: {
+            transactionCode: code,
+            amount: amount,
+            type: 'INFLOW',
+            source: 'SALE',
+            description: `تحصيل قسط مبيعات للفاتورة: ${sale.id} للعميل: ${sale.customer.name}`,
+            saleId: sale.id,
+          },
+        });
+      }
+
+      return updatedInstallment;
     });
-
-    // Also update the parent Sale paid amount
-    const sale = installment.sale;
-    const newSalePaid = sale.paid + amount;
-    const saleStatus = newSalePaid >= sale.total ? 'PAID' : newSalePaid > 0 ? 'PARTIAL' : 'PENDING';
-
-    await this.prisma.sale.update({
-      where: { id: sale.id },
-      data: {
-        paid: newSalePaid,
-        status: saleStatus,
-      },
-    });
-
-    return updatedInstallment;
   }
 
   async listInstallments() {

@@ -74,6 +74,8 @@ async function migrate() {
     await prisma.expenseCategory.deleteMany();
     await prisma.activity.deleteMany();
     await prisma.notification.deleteMany();
+    await prisma.returnItem.deleteMany();
+    await prisma.return.deleteMany();
     await prisma.saleItem.deleteMany();
     await prisma.installment.deleteMany();
     await prisma.deliveryOrder.deleteMany();
@@ -479,9 +481,10 @@ async function migrate() {
       salesToInsert.push({
         id: saleId,
         customerId: data.customerId,
+        invoiceNumber: serial, // Legacy invoice serial number (e.g. SI25000031)
         total: data.total,
-        paid: data.paid,
-        status,
+        paid: 0, // Will be accumulated from safe payments (tbl_safe_mst)
+        status: 'PENDING',
         createdAt: data.trxDate,
         updatedAt: data.trxDate,
       });
@@ -580,6 +583,153 @@ async function migrate() {
       expensesCount++;
     }
     console.log(`✅ Expenses migration completed. Migrated ${expensesCount} expenses.`);
+
+    // ==========================================
+    // 9. Migrate Vault & Fund Transactions (tbl_safe_mst)
+    // ==========================================
+    console.log('🔄 Migrating Vault & Fund Transactions from tbl_safe_mst...');
+    // We clean fund transactions before adding (avoiding duplicates on re-runs)
+    await prisma.fundTransaction.deleteMany();
+    await prisma.revenue.deleteMany();
+    await prisma.revenueCategory.deleteMany();
+
+    const safeResult = await pool.request().query(
+      "SELECT * FROM tbl_safe_mst WHERE (deleted = 0 OR deleted IS NULL)"
+    );
+    const oldSafeRows = safeResult.recordset;
+    console.log(`ℹ️ Found ${oldSafeRows.length} safe/receipt transactions in old database.`);
+
+    // Pre-cache sales to match DocNo -> invoiceNumber rapidly
+    const allSales = await prisma.sale.findMany({
+      select: { id: true, invoiceNumber: true }
+    });
+    const saleByLegacySerialMap = new Map<string, string>();
+    for (const s of allSales) {
+      if (s.invoiceNumber) {
+        saleByLegacySerialMap.set(s.invoiceNumber, s.id);
+      }
+    }
+
+    // Default Revenue category for historical collections
+    const legacyRevenueCategory = await prisma.revenueCategory.create({
+      data: { name: 'تحصيل فواتير تاريخي' }
+    });
+
+    let fundTransCount = 0;
+    let revenueCount = 0;
+    let linkedSalesCount = 0;
+
+    for (const r of oldSafeRows) {
+      const amount = parseFloat(r.in_amount || '0') - parseFloat(r.out_amount || '0');
+      if (amount === 0) continue;
+
+      const isReceipt = amount > 0;
+      const absoluteAmount = Math.abs(amount);
+      const transactionCode = `SF-LEGACY-${r.safe_id}`;
+
+      // Figure out if there is a linked sale
+      // In tbl_safe_mst: DocNo represents the legacy invoice number (e.g. "31")
+      // And we have legacy invoice numbers like "SI25000031" where serial could match SI250000 + DocNo
+      let matchedSaleId: string | null = null;
+      if (r.DocNo && isReceipt) {
+        const docNoStr = String(r.DocNo).trim();
+        // 1. Try direct matching
+        matchedSaleId = saleByLegacySerialMap.get(docNoStr) || null;
+
+        // 2. Try prefixing common invoice code formats, e.g. SI25000031
+        if (!matchedSaleId) {
+          const paddedDocNo = docNoStr.padStart(8, '0');
+          const possibleSerials = [
+            `SI25${paddedDocNo.slice(-6)}`,
+            `SI2500${docNoStr.padStart(2, '0')}`,
+            `SI25000${docNoStr}`,
+            `SI250000${docNoStr}`,
+            `SI2500000${docNoStr}`,
+            `SI26${paddedDocNo.slice(-6)}`
+          ];
+          for (const s of possibleSerials) {
+            const foundId = saleByLegacySerialMap.get(s);
+            if (foundId) {
+              matchedSaleId = foundId;
+              break;
+            }
+          }
+        }
+      }
+
+      let revenueId: string | null = null;
+      // If it's a receipt/inflow, we create a Revenue entry as well (Historical sales payment collections)
+      if (isReceipt) {
+        const rev = await prisma.revenue.create({
+          data: {
+            amount: absoluteAmount,
+            description: r.extranote || `سند قبض تاريخي رقم ${r.DocNo || ''}`,
+            date: r.safe_date ? new Date(r.safe_date) : new Date(),
+            categoryId: legacyRevenueCategory.id,
+            saleId: matchedSaleId,
+            userId: defaultUser?.id || null,
+            createdAt: r.cDate ? new Date(r.cDate) : new Date(),
+            updatedAt: r.eDate ? new Date(r.eDate) : new Date(),
+          }
+        });
+        revenueId = rev.id;
+        revenueCount++;
+      }
+
+      await prisma.fundTransaction.create({
+        data: {
+          transactionCode,
+          amount: absoluteAmount,
+          type: isReceipt ? 'INFLOW' : 'OUTFLOW',
+          source: matchedSaleId ? 'SALE' : (isReceipt ? 'REVENUE' : 'EXPENSE'),
+          paymentMethod: 'CASH', // default for legacy
+          reference: r.DocNo ? String(r.DocNo) : null,
+          documentNumber: r.DocNo ? String(r.DocNo) : null,
+          description: r.extranote || `حركة خزينة تاريخية - ${isReceipt ? 'قبض' : 'صرف'}`,
+          date: r.safe_date ? new Date(r.safe_date) : new Date(),
+          saleId: matchedSaleId,
+          revenueId: revenueId,
+          userId: defaultUser?.id || null,
+          createdAt: r.cDate ? new Date(r.cDate) : new Date(),
+        }
+      });
+
+      if (matchedSaleId) {
+        linkedSalesCount++;
+        // Update the accumulated paid amount for the sale in the database
+        await prisma.sale.update({
+          where: { id: matchedSaleId },
+          data: {
+            paid: {
+              increment: absoluteAmount
+            }
+          }
+        });
+
+        // Fetch updated sale to adjust status if paid fully
+        const updatedSale = await prisma.sale.findUnique({
+          where: { id: matchedSaleId },
+          select: { total: true, paid: true }
+        });
+        if (updatedSale) {
+          let newStatus: 'PAID' | 'PARTIAL' | 'PENDING' = 'PENDING';
+          if (updatedSale.paid >= updatedSale.total) {
+            newStatus = 'PAID';
+          } else if (updatedSale.paid > 0) {
+            newStatus = 'PARTIAL';
+          }
+          await prisma.sale.update({
+            where: { id: matchedSaleId },
+            data: { status: newStatus }
+          });
+        }
+      }
+      fundTransCount++;
+    }
+
+    console.log(`✅ Safe transactions migration completed. Migrated ${fundTransCount} transactions.`);
+    console.log(`📈 Generated ${revenueCount} Revenue collection records.`);
+    console.log(`🔗 Successfully linked ${linkedSalesCount} payments directly to sales and updated their payment states.`);
 
     console.log('🎉 Database migration finished successfully!');
   } catch (error) {

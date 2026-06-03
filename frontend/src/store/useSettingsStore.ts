@@ -13,6 +13,9 @@ export interface CompanySettings {
   taxNumber: string | null;
   currency: string;
   invoiceFooter: string | null;
+  linkSalesToFund: boolean;
+  linkPurchasesToFund: boolean;
+  linkExpensesToFund: boolean;
   updatedAt: string;
 }
 
@@ -82,6 +85,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         taxNumber: "67890",
         currency: "SDG",
         invoiceFooter: "شكراً لتعاملكم معنا - المثنى للأدوية",
+        linkSalesToFund: true,
+        linkPurchasesToFund: true,
+        linkExpensesToFund: true,
         updatedAt: new Date().toISOString()
       };
       set({ settings: fallbackSettings });

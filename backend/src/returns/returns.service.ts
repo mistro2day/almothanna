@@ -18,6 +18,7 @@ export class ReturnsService {
     const sale = await this.prisma.sale.findUnique({
       where: { id: dto.saleId },
       include: {
+        customer: true,
         items: true,
         returns: {
           include: {
@@ -158,6 +159,25 @@ export class ReturnsService {
       if (dto.refundToCash) {
         // إرجاع نقدي: تقليل المبلغ المدفوع أيضاً لأننا أرجعنا كاش للعميل
         newPaid = Math.max(0, sale.paid - totalRefundAmount);
+
+        // تسجيل قيد صرف بالصندوق للمرتجع النقدي
+        const settings = await tx.companySettings.findFirst();
+        if (!settings || settings.linkSalesToFund) {
+          const txCount = await tx.fundTransaction.count();
+          const yearSuffix = new Date().getFullYear().toString().slice(-2);
+          const code = `SF${yearSuffix}${String(txCount + 1).padStart(6, '0')}`;
+          await tx.fundTransaction.create({
+            data: {
+              transactionCode: code,
+              amount: totalRefundAmount,
+              type: 'OUTFLOW',
+              source: 'RETURN',
+              paymentMethod: 'CASH',
+              description: `مبلغ مرتجع نقدي للفاتورة: ${sale.id} للعميل: ${sale.customer.name}`,
+              returnId: returnRecord.id,
+            },
+          });
+        }
       } else {
         // تخفيض المديونية: المبلغ المدفوع يظل كما هو، وتقل المديونية المتبقية.
         // تعديل الأقساط غير المدفوعة بدءاً من الأخير

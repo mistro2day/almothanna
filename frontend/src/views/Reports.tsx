@@ -85,6 +85,43 @@ export default function Reports() {
   const [selectedCustomerForStatement, setSelectedCustomerForStatement] = useState<string>('');
   const [selectedSupplierForStatement, setSelectedSupplierForStatement] = useState<string>('');
   const [statementLoading, setStatementLoading] = useState(false);
+  const [statementError, setStatementError] = useState<string>('');
+  const [loadingStatementId, setLoadingStatementId] = useState<string>('');
+
+  // Pagination states for all report tables
+  const [salesPage, setSalesPage] = useState(1);
+  const [salesPageSize, setSalesPageSize] = useState(10);
+
+  const [repSalesPage, setRepSalesPage] = useState(1);
+  const [repSalesPageSize, setRepSalesPageSize] = useState(10);
+
+  const [repOpsPage, setRepOpsPage] = useState(1);
+  const [repOpsPageSize, setRepOpsPageSize] = useState(10);
+
+  const [invPage, setInvPage] = useState(1);
+  const [invPageSize, setInvPageSize] = useState(10);
+
+  const [supPage, setSupPage] = useState(1);
+  const [supPageSize, setSupPageSize] = useState(10);
+
+  const [custPage, setCustPage] = useState(1);
+  const [custPageSize, setCustPageSize] = useState(10);
+
+  const [shipPage, setShipPage] = useState(1);
+  const [shipPageSize, setShipPageSize] = useState(10);
+
+  const [profitProdPage, setProfitProdPage] = useState(1);
+  const [profitProdPageSize, setProfitProdPageSize] = useState(10);
+
+  const [profitInvPage, setProfitInvPage] = useState(1);
+  const [profitInvPageSize, setProfitInvPageSize] = useState(10);
+
+  const [profitCustPage, setProfitCustPage] = useState(1);
+  const [profitCustPageSize, setProfitCustPageSize] = useState(10);
+
+  const [profitCatPage, setProfitCatPage] = useState(1);
+  const [profitCatPageSize, setProfitCatPageSize] = useState(10);
+
 
   // Profits sub-tab
   const [profitsSubTab, setProfitsSubTab] = useState<'byProduct' | 'byInvoice' | 'byCustomer' | 'byCategory'>('byProduct');
@@ -165,6 +202,329 @@ export default function Reports() {
       }
     }
   }, [salesData, activeTab]);
+
+  // Statements scroll logic not needed anymore
+
+
+  // Premium RTL Pagination Component
+  const renderPagination = (
+    currentPage: number,
+    pageSize: number,
+    totalItems: number,
+    onPageChange: (page: number) => void,
+    onPageSizeChange: (size: number) => void
+  ) => {
+    const totalPages = Math.ceil(totalItems / pageSize) || 1;
+    if (totalItems === 0) return null;
+
+    return (
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-4 pt-4 border-t border-[var(--border-color)]/60 text-xs text-[var(--text-secondary)] select-none">
+        <div className="flex items-center gap-2">
+          <span>عدد السجلات:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              onPageSizeChange(Number(e.target.value));
+              onPageChange(1);
+            }}
+            className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-2 py-1 outline-none text-[var(--text-primary)] cursor-pointer text-xs"
+          >
+            <option value={10}>10 records</option>
+            <option value={20}>20 records</option>
+            <option value={50}>50 records</option>
+            <option value={100}>100 records</option>
+          </select>
+          <span className="mr-2">
+            عرض {Math.min(totalItems, (currentPage - 1) * pageSize + 1)} - {Math.min(totalItems, currentPage * pageSize)} من {totalItems} سجل
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-1">
+          <button
+            disabled={currentPage === 1}
+            onClick={() => onPageChange(currentPage - 1)}
+            className="px-2 py-1 rounded-lg border border-[var(--border-color)] hover:bg-[var(--border-color)]/30 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold"
+          >
+            السابق
+          </button>
+          
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+            .map((p, idx, arr) => {
+              const showEllipsis = idx > 0 && arr[idx - 1] !== p - 1;
+              return (
+                <React.Fragment key={p}>
+                  {showEllipsis && <span className="px-1">...</span>}
+                  <button
+                    onClick={() => onPageChange(p)}
+                    className={`w-7 h-7 flex items-center justify-center rounded-lg font-bold transition-all cursor-pointer ${
+                      currentPage === p
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10'
+                        : 'border border-[var(--border-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => onPageChange(currentPage + 1)}
+            className="px-2 py-1 rounded-lg border border-[var(--border-color)] hover:bg-[var(--border-color)]/30 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold"
+          >
+            التالي
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Open statement in new premium printable window
+  const openCustomerStatementWindow = (statementData: any) => {
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyPhone = settings?.phone || "غير محدد";
+    const companyAddress = settings?.address || "السودان";
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) return;
+
+    const rowsHTML = (statementData.entries || []).map((entry: any, idx: number) => {
+      const formattedDescription = entry.description.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (match: string) => `#${match.slice(0, 8)}`);
+      return `
+        <tr>
+          <td style="text-align: center; padding: 10px; border: 1px solid #e2e8f0; font-family: monospace;">${entry.date}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right; font-weight: bold;">${formattedDescription}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; color: #ef4444; font-family: monospace;">${entry.debit > 0 ? entry.debit.toLocaleString() + ' SDG' : '-'}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; color: #10b981; font-family: monospace;">${entry.credit > 0 ? entry.credit.toLocaleString() + ' SDG' : '-'}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold; font-family: monospace; background-color: #f8fafc;">${entry.balance.toLocaleString()} SDG</td>
+        </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>كشف حساب عميل - ${statementData.customer.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4 portrait; margin: 15mm 12mm 15mm 12mm; }
+    * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+    body { background: #fff; color: #1e293b; line-height: 1.5; padding: 0; margin: 0; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #059669; padding-bottom: 12px; margin-bottom: 20px; }
+    .company h1 { font-size: 24px; color: #065f46; margin: 0 0 4px 0; font-weight: 800; }
+    .company p { font-size: 11px; color: #475569; margin: 0; }
+    .title h2 { font-size: 20px; color: #059669; margin: 0; font-weight: 700; text-align: left; }
+    .title p { font-size: 11px; color: #64748b; margin-top: 2px; text-align: left; }
+    
+    .info-box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 20px; background: #f8fafc; font-size: 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .info-item { display: flex; gap: 6px; }
+    .info-item span { color: #64748b; }
+    .info-item strong { color: #0f172a; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { background-color: #059669; color: white; padding: 10px 8px; border: 1px solid #059669; font-size: 12px; font-weight: 700; text-align: center; }
+    td { font-size: 12px; padding: 10px 8px; border: 1px solid #e2e8f0; }
+    tr:nth-child(even) { background: #f8fafc; }
+    
+    .totals-box { margin-top: 20px; border: 2px solid #059669; border-radius: 12px; padding: 16px; background: #ecfdf5; font-size: 13px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+    .final-balance { font-size: 16px; color: #065f46; font-weight: 800; }
+    
+    .footer { margin-top: 50px; display: flex; justify-content: space-between; font-size: 11px; color: #64748b; border-top: 1px dashed #e2e8f0; padding-top: 15px; }
+    .stamp { border: 2px dashed #cbd5e1; border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: 700; color: #059669; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="company">
+      <h1>${companyName}</h1>
+      <p>🏢 ${companyAddress} &nbsp;|&nbsp; 📞 هاتف: ${companyPhone}</p>
+    </div>
+    <div class="title">
+      <h2>كشف حساب عميل مفصل</h2>
+      <p>تاريخ الطباعة: ${new Date().toLocaleString('ar-SA')}</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <div class="info-item"><span>اسم العميل:</span> <strong>${statementData.customer.name}</strong></div>
+    <div class="info-item"><span>نوع الكيان:</span> <strong>${statementData.customer.type || 'عميل'}</strong></div>
+    <div class="info-item"><span>الولاية:</span> <strong>${statementData.customer.state || '-'}</strong></div>
+    <div class="info-item"><span>الهاتف:</span> <strong>${statementData.customer.phone || '-'}</strong></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 120px;">التاريخ</th>
+        <th>البيان</th>
+        <th style="width: 130px;">له (مدين)</th>
+        <th style="width: 130px;">عليه (دائن)</th>
+        <th style="width: 150px;">الرصيد</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHTML}
+    </tbody>
+  </table>
+
+  <div class="totals-box">
+    <div>إجمالي المدين: <span style="color: #ef4444; font-family: monospace;">${(statementData.summary?.totalDebit || 0).toLocaleString()} SDG</span></div>
+    <div>إجمالي الدائن: <span style="color: #10b981; font-family: monospace;">${(statementData.summary?.totalCredit || 0).toLocaleString()} SDG</span></div>
+    <div class="final-balance">الرصيد النهائي (المستحق): ${(statementData.summary?.finalBalance || 0).toLocaleString()} SDG</div>
+  </div>
+
+  <div class="footer">
+    <div>تم توليد كشف الحساب تلقائياً عبر نظام المثنى للأدوية ERP.</div>
+    <div class="stamp">توقيع وختم الإدارة</div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(() => {
+        window.print();
+        window.onafterprint = function() { window.close(); };
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+    `);
+    printWindow.document.close();
+  };
+
+  const openSupplierStatementWindow = (statementData: any) => {
+    const companyName = settings?.name || "المثنى للأدوية";
+    const companyPhone = settings?.phone || "غير محدد";
+    const companyAddress = settings?.address || "السودان";
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) return;
+
+    const rowsHTML = (statementData.entries || []).map((entry: any, idx: number) => {
+      const formattedDescription = entry.description.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (match: string) => `#${match.slice(0, 8)}`);
+      return `
+        <tr>
+          <td style="text-align: center; padding: 10px; border: 1px solid #e2e8f0; font-family: monospace;">${entry.date}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right; font-weight: bold;">${formattedDescription}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; color: #ef4444; font-family: monospace;">${entry.debit > 0 ? entry.debit.toLocaleString() + ' SDG' : '-'}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; color: #10b981; font-family: monospace;">${entry.credit > 0 ? entry.credit.toLocaleString() + ' SDG' : '-'}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold; font-family: monospace; background-color: #f8fafc;">${entry.balance.toLocaleString()} SDG</td>
+        </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>كشف حساب مورد - ${statementData.supplier.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4 portrait; margin: 15mm 12mm 15mm 12mm; }
+    * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+    body { background: #fff; color: #1e293b; line-height: 1.5; padding: 0; margin: 0; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #d97706; padding-bottom: 12px; margin-bottom: 20px; }
+    .company h1 { font-size: 24px; color: #b45309; margin: 0 0 4px 0; font-weight: 800; }
+    .company p { font-size: 11px; color: #475569; margin: 0; }
+    .title h2 { font-size: 20px; color: #d97706; margin: 0; font-weight: 700; text-align: left; }
+    .title p { font-size: 11px; color: #64748b; margin-top: 2px; text-align: left; }
+    
+    .info-box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 20px; background: #f8fafc; font-size: 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .info-item { display: flex; gap: 6px; }
+    .info-item span { color: #64748b; }
+    .info-item strong { color: #0f172a; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { background-color: #d97706; color: white; padding: 10px 8px; border: 1px solid #d97706; font-size: 12px; font-weight: 700; text-align: center; }
+    td { font-size: 12px; padding: 10px 8px; border: 1px solid #e2e8f0; }
+    tr:nth-child(even) { background: #f8fafc; }
+    
+    .totals-box { margin-top: 20px; border: 2px solid #d97706; border-radius: 12px; padding: 16px; background: #fffbeb; font-size: 13px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+    .final-balance { font-size: 16px; color: #b45309; font-weight: 800; }
+    
+    .footer { margin-top: 50px; display: flex; justify-content: space-between; font-size: 11px; color: #64748b; border-top: 1px dashed #e2e8f0; padding-top: 15px; }
+    .stamp { border: 2px dashed #cbd5e1; border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: 700; color: #d97706; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="company">
+      <h1>${companyName}</h1>
+      <p>🏢 ${companyAddress} &nbsp;|&nbsp; 📞 هاتف: ${companyPhone}</p>
+    </div>
+    <div class="title">
+      <h2>كشف حساب مورد مفصل</h2>
+      <p>تاريخ الطباعة: ${new Date().toLocaleString('ar-SA')}</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <div class="info-item"><span>اسم المورد:</span> <strong>${statementData.supplier.name}</strong></div>
+    <div class="info-item"><span>الشركة:</span> <strong>${statementData.supplier.companyName || '-'}</strong></div>
+    <div class="info-item"><span>نوع المورد:</span> <strong>${statementData.supplier.type || 'مورد'}</strong></div>
+    <div class="info-item"><span>رقم الهاتف:</span> <strong>${statementData.supplier.phone || '-'}</strong></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 120px;">التاريخ</th>
+        <th>البيان</th>
+        <th style="width: 130px;">له (مدين)</th>
+        <th style="width: 130px;">عليه (دائن)</th>
+        <th style="width: 150px;">الرصيد</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHTML}
+    </tbody>
+  </table>
+
+  <div class="totals-box">
+    <div>إجمالي المدين: <span style="color: #ef4444; font-family: monospace;">${(statementData.summary?.totalDebit || 0).toLocaleString()} SDG</span></div>
+    <div>إجمالي الدائن: <span style="color: #10b981; font-family: monospace;">${(statementData.summary?.totalCredit || 0).toLocaleString()} SDG</span></div>
+    <div class="final-balance">الرصيد النهائي: ${(statementData.summary?.finalBalance || 0).toLocaleString()} SDG</div>
+  </div>
+
+  <div class="footer">
+    <div>تم توليد كشف الحساب تلقائياً عبر نظام المثنى للأدوية ERP.</div>
+    <div class="stamp">توقيع وختم الإدارة</div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(() => {
+        window.print();
+        window.onafterprint = function() { window.close(); };
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Reset pages to 1 when search filters change
+  useEffect(() => { setSalesPage(1); }, [salesSearch]);
+  useEffect(() => { setRepSalesPage(1); }, [repSearch]);
+  useEffect(() => { setSupPage(1); }, [supplierSearch]);
+  useEffect(() => { setCustPage(1); }, [customerSearch]);
+  useEffect(() => { setShipPage(1); }, [shippingSearch]);
+  useEffect(() => { setProfitProdPage(1); }, [startDate, endDate, profitsSubTab]);
+  useEffect(() => { setProfitInvPage(1); }, [startDate, endDate, profitsSubTab]);
+  useEffect(() => { setProfitCustPage(1); }, [startDate, endDate, profitsSubTab]);
+  useEffect(() => { setProfitCatPage(1); }, [startDate, endDate, profitsSubTab]);
+
 
   // Premium Excel XML Exporter (Supports RTL direction, proper headers and columns format)
   const exportToExcelXML = (dataList: any[], filename: string, headers: string[], rowMapper: (item: any) => string[], title: string, subtitle: string) => {
@@ -790,9 +1150,10 @@ export default function Reports() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border-color)]/40 text-xs">
-                        {salesData.itemsSalesReport
-                          .filter((item: any) => item.productName.toLowerCase().includes(salesSearch.toLowerCase()) || item.scientificName.toLowerCase().includes(salesSearch.toLowerCase()))
-                          .map((item: any, idx: number) => (
+                        {(() => {
+                          const filtered = salesData.itemsSalesReport.filter((item: any) => item.productName.toLowerCase().includes(salesSearch.toLowerCase()) || item.scientificName.toLowerCase().includes(salesSearch.toLowerCase()));
+                          const paginated = filtered.slice((salesPage - 1) * salesPageSize, salesPage * salesPageSize);
+                          return paginated.map((item: any, idx: number) => (
                             <tr key={idx} className="hover:bg-[var(--border-color)]/20 text-[var(--text-primary)]">
                               <td className="py-3.5 px-4 font-bold">{item.productName}</td>
                               <td className="py-3.5 px-4 text-[var(--text-secondary)] font-mono">{item.scientificName || '-'}</td>
@@ -801,10 +1162,15 @@ export default function Reports() {
                               <td className="py-3.5 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
                               <td className="py-3.5 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
                             </tr>
-                        ))}
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
+                  {(() => {
+                    const filteredCount = salesData.itemsSalesReport.filter((item: any) => item.productName.toLowerCase().includes(salesSearch.toLowerCase()) || item.scientificName.toLowerCase().includes(salesSearch.toLowerCase())).length;
+                    return renderPagination(salesPage, salesPageSize, filteredCount, setSalesPage, setSalesPageSize);
+                  })()}
                 </div>
 
 
@@ -1077,9 +1443,10 @@ export default function Reports() {
                                 <td colSpan={8} className="py-8 text-center text-[var(--text-secondary)]">لا توجد مبيعات مسجلة باسم أي مندوب حالياً.</td>
                               </tr>
                             ) : (
-                              salesData.representativesSalesReport
-                                .filter((rep: any) => rep.name.toLowerCase().includes(repSearch.toLowerCase()))
-                                .map((rep: any, idx: number) => (
+                              (() => {
+                                const filtered = (salesData.representativesSalesReport || []).filter((rep: any) => rep.name.toLowerCase().includes(repSearch.toLowerCase()));
+                                const paginated = filtered.slice((repSalesPage - 1) * repSalesPageSize, repSalesPage * repSalesPageSize);
+                                return paginated.map((rep: any, idx: number) => (
                                   <tr 
                                     key={idx} 
                                     onClick={() => { setSelectedRep(rep); setRepSubTab('operations'); }}
@@ -1103,11 +1470,16 @@ export default function Reports() {
                                       </button>
                                     </td>
                                   </tr>
-                              ))
+                                ));
+                              })()
                             )}
                           </tbody>
                         </table>
                       </div>
+                      {(() => {
+                        const filteredCount = (salesData.representativesSalesReport || []).filter((rep: any) => rep.name.toLowerCase().includes(repSearch.toLowerCase())).length;
+                        return renderPagination(repSalesPage, repSalesPageSize, filteredCount, setRepSalesPage, setRepSalesPageSize);
+                      })()}
                     </div>
                   )}
 
@@ -1217,14 +1589,21 @@ export default function Reports() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                              {((selectedRep ? selectedRep.sales : allSales).length === 0) ? (
-                                <tr>
-                                  <td colSpan={selectedRep ? 8 : 9} className="py-12 text-center text-[var(--text-secondary)]">
-                                    لا توجد فواتير أو عمليات مسجلة تحت هذا الفلتر حالياً.
-                                  </td>
-                                </tr>
-                              ) : (
-                                (selectedRep ? selectedRep.sales : allSales).map((sale: any, index: number) => (
+                              {(() => {
+                                const targetSales = selectedRep ? selectedRep.sales : allSales;
+                                const paginated = targetSales.slice((repOpsPage - 1) * repOpsPageSize, repOpsPage * repOpsPageSize);
+                                
+                                if (paginated.length === 0) {
+                                  return (
+                                    <tr>
+                                      <td colSpan={selectedRep ? 8 : 9} className="py-12 text-center text-[var(--text-secondary)]">
+                                        لا توجد فواتير أو عمليات مسجلة تحت هذا الفلتر حالياً.
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+                                
+                                return paginated.map((sale: any, index: number) => (
                                   <tr key={index} className="hover:bg-[var(--border-color)]/20 transition-colors">
                                     <td className="py-3 px-3 font-mono font-bold text-[var(--text-secondary)]">#{sale.id.slice(0, 8)}</td>
                                     <td className="py-3 px-3 font-mono">{sale.createdAt.split('T')[0]}</td>
@@ -1256,10 +1635,14 @@ export default function Reports() {
                                     </td>
                                   </tr>
                                 ))
-                              )}
+                              })()}
                             </tbody>
                           </table>
                         </div>
+                        {(() => {
+                          const targetSales = selectedRep ? selectedRep.sales : allSales;
+                          return renderPagination(repOpsPage, repOpsPageSize, targetSales.length, setRepOpsPage, setRepOpsPageSize);
+                        })()}
                       </div>
                     </div>
                   )}
@@ -1400,23 +1783,27 @@ export default function Reports() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                        {inventoryData.movements.map((movement: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-[var(--border-color)]/20">
-                            <td className="py-3 px-4 font-semibold">{movement.productName}</td>
-                            <td className="py-3 px-4 font-mono">{movement.batchNumber}</td>
-                            <td className="py-3 px-4">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                movement.typeCode === 'IN' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
-                              }`}>{movement.type}</span>
-                            </td>
-                            <td className="py-3 px-4 font-bold font-mono">{movement.qty} عبوة</td>
-                            <td className="py-3 px-4 text-[var(--text-secondary)]">{movement.reason}</td>
-                            <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{movement.date}</td>
-                          </tr>
-                        ))}
+                        {(() => {
+                          const paginated = (inventoryData.movements || []).slice((invPage - 1) * invPageSize, invPage * invPageSize);
+                          return paginated.map((movement: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                              <td className="py-3 px-4 font-semibold">{movement.productName}</td>
+                              <td className="py-3 px-4 font-mono">{movement.batchNumber}</td>
+                              <td className="py-3 px-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  movement.typeCode === 'IN' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+                                }`}>{movement.type}</span>
+                              </td>
+                              <td className="py-3 px-4 font-bold font-mono">{movement.qty} عبوة</td>
+                              <td className="py-3 px-4 text-[var(--text-secondary)]">{movement.reason}</td>
+                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{movement.date}</td>
+                            </tr>
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
+                  {renderPagination(invPage, invPageSize, (inventoryData.movements || []).length, setInvPage, setInvPageSize)}
                 </div>
               </div>
             )}
@@ -1569,9 +1956,10 @@ export default function Reports() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                        {supplierData.suppliers
-                          .filter((s: any) => s.name.toLowerCase().includes(supplierSearch.toLowerCase()) || s.companyName.toLowerCase().includes(supplierSearch.toLowerCase()))
-                          .map((s: any, idx: number) => (
+                        {(() => {
+                          const filtered = supplierData.suppliers.filter((s: any) => s.name.toLowerCase().includes(supplierSearch.toLowerCase()) || s.companyName.toLowerCase().includes(supplierSearch.toLowerCase()));
+                          const paginated = filtered.slice((supPage - 1) * supPageSize, supPage * supPageSize);
+                          return paginated.map((s: any, idx: number) => (
                             <tr key={idx} className="hover:bg-[var(--border-color)]/20">
                               <td className="py-3.5 px-4 font-bold">{s.name}</td>
                               <td className="py-3.5 px-4 text-[var(--text-secondary)]">{s.companyName}</td>
@@ -1583,101 +1971,38 @@ export default function Reports() {
                               <td className="py-3.5 px-4 font-bold font-mono text-rose-500">{s.remainingDebt.toLocaleString()} SDG</td>
                               <td className="py-3.5 px-4">
                                 <button
+                                  disabled={loadingStatementId !== ''}
                                   onClick={async () => {
-                                    setSelectedSupplierForStatement(s.id);
-                                    setStatementLoading(true);
+                                    setLoadingStatementId(s.id);
                                     try {
                                       const params: any = {};
                                       if (startDate) params.startDate = startDate;
                                       if (endDate) params.endDate = endDate;
                                       const { data } = await apiClient.get(`/reports/supplier-statement/${s.id}`, { params });
-                                      setSupplierStatementData(data);
-                                    } catch (e) { console.error(e); }
-                                    finally { setStatementLoading(false); }
+                                      openSupplierStatementWindow(data);
+                                    } catch (e) {
+                                      console.error(e);
+                                      alert('فشل تحميل كشف حساب المورد. يرجى المحاولة مرة أخرى.');
+                                    } finally {
+                                      setLoadingStatementId('');
+                                    }
                                   }}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap"
+                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
                                 >
                                   <FileText className="w-3 h-3" />
-                                  كشف حساب
+                                  <span>{loadingStatementId === s.id ? 'جاري التحميل...' : 'كشف حساب'}</span>
                                 </button>
                               </td>
                             </tr>
-                        ))}
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Supplier Statement Details */}
-                  {selectedSupplierForStatement && supplierStatementData && (
-                    <div className="mt-6 glass-card p-5 rounded-2xl space-y-4 border-t-4 border-t-amber-500 animate-fade-in-slide">
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                        <div className="space-y-1">
-                          <h3 className="text-base font-bold text-[var(--text-primary)]">📋 كشف حساب المورد: <span className="text-amber-500">{supplierStatementData.supplierName}</span></h3>
-                          <p className="text-xs text-[var(--text-secondary)]">كشف الحساب التفصيلي يوضح جميع الحركات المالية (له / عليه)</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => exportToExcelXML(
-                              supplierStatementData.entries, `supplier_statement_${supplierStatementData.supplierName}`,
-                              ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
-                              (item: any) => [item.date, item.description, item.debit.toString(), item.credit.toString(), item.balance.toString()],
-                              `كشف حساب المورد: ${supplierStatementData.supplierName}`, `الرصيد النهائي: ${supplierStatementData.finalBalance.toLocaleString()} SDG`
-                            )}
-                            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
-                          ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
-                          <button 
-                            onClick={() => exportPDFGeneral(
-                              supplierStatementData.entries, `كشف حساب المورد: ${supplierStatementData.supplierName}`,
-                              ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
-                              (item: any) => [item.date, item.description, `${item.debit.toLocaleString()} SDG`, `${item.credit.toLocaleString()} SDG`, `${item.balance.toLocaleString()} SDG`],
-                              `supplier_statement`
-                            )}
-                            className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
-                          ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
-                          <button 
-                            onClick={() => { setSelectedSupplierForStatement(''); setSupplierStatementData(null); }}
-                            className="flex items-center gap-2 px-3 py-2 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] font-semibold rounded-xl text-xs transition-colors cursor-pointer"
-                          >✕ إغلاق</button>
-                        </div>
-                      </div>
-                      {statementLoading ? (
-                        <div className="text-center py-8 text-[var(--text-secondary)]">جاري تحميل كشف الحساب...</div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-right border-collapse text-xs">
-                            <thead>
-                              <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
-                                <th className="py-3 px-4 font-bold">التاريخ</th>
-                                <th className="py-3 px-4 font-bold">البيان</th>
-                                <th className="py-3 px-4 font-bold">له (مدين)</th>
-                                <th className="py-3 px-4 font-bold">عليه (دائن)</th>
-                                <th className="py-3 px-4 font-bold">الرصيد</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                              {(supplierStatementData.entries || []).map((entry: any, idx: number) => (
-                                <tr key={idx} className="hover:bg-[var(--border-color)]/20">
-                                  <td className="py-3 px-4 font-mono">{entry.date}</td>
-                                  <td className="py-3 px-4">{entry.description}</td>
-                                  <td className="py-3 px-4 font-mono text-rose-500">{entry.debit > 0 ? `${entry.debit.toLocaleString()} SDG` : '-'}</td>
-                                  <td className="py-3 px-4 font-mono text-emerald-500">{entry.credit > 0 ? `${entry.credit.toLocaleString()} SDG` : '-'}</td>
-                                  <td className="py-3 px-4 font-bold font-mono">{entry.balance.toLocaleString()} SDG</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr className="border-t-2 border-[var(--border-color)] font-bold bg-[var(--border-color)]/10">
-                                <td className="py-3 px-4" colSpan={2}>الرصيد النهائي</td>
-                                <td className="py-3 px-4 font-mono text-rose-500">{(supplierStatementData.totalDebit || 0).toLocaleString()} SDG</td>
-                                <td className="py-3 px-4 font-mono text-emerald-500">{(supplierStatementData.totalCredit || 0).toLocaleString()} SDG</td>
-                                <td className="py-3 px-4 font-mono text-lg">{(supplierStatementData.finalBalance || 0).toLocaleString()} SDG</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {(() => {
+                    const filteredCount = supplierData.suppliers.filter((s: any) => s.name.toLowerCase().includes(supplierSearch.toLowerCase()) || s.companyName.toLowerCase().includes(supplierSearch.toLowerCase())).length;
+                    return renderPagination(supPage, supPageSize, filteredCount, setSupPage, setSupPageSize);
+                  })()}
                 </div>
               </div>
             )}
@@ -1847,9 +2172,10 @@ export default function Reports() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                          {customerData.customers
-                            .filter((c: any) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.state.toLowerCase().includes(customerSearch.toLowerCase()))
-                            .map((c: any, idx: number) => (
+                          {(() => {
+                            const filtered = customerData.customers.filter((c: any) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.state.toLowerCase().includes(customerSearch.toLowerCase()));
+                            const paginated = filtered.slice((custPage - 1) * custPageSize, custPage * custPageSize);
+                            return paginated.map((c: any, idx: number) => (
                               <tr key={idx} className="hover:bg-[var(--border-color)]/20">
                                 <td className="py-3 px-3 font-bold">{c.name}</td>
                                 <td className="py-3 px-3">{c.state}</td>
@@ -1869,101 +2195,38 @@ export default function Reports() {
                                 </td>
                                 <td className="py-3 px-3">
                                   <button
+                                    disabled={loadingStatementId !== ''}
                                     onClick={async () => {
-                                      setSelectedCustomerForStatement(c.id);
-                                      setStatementLoading(true);
+                                      setLoadingStatementId(c.id);
                                       try {
                                         const params: any = {};
                                         if (startDate) params.startDate = startDate;
                                         if (endDate) params.endDate = endDate;
                                         const { data } = await apiClient.get(`/reports/customer-statement/${c.id}`, { params });
-                                        setCustomerStatementData(data);
-                                      } catch (e) { console.error(e); }
-                                      finally { setStatementLoading(false); }
+                                        openCustomerStatementWindow(data);
+                                      } catch (e) {
+                                        console.error(e);
+                                        alert('فشل تحميل كشف حساب العميل. يرجى المحاولة مرة أخرى.');
+                                      } finally {
+                                        setLoadingStatementId('');
+                                      }
                                     }}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap"
+                                    className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
                                   >
                                     <FileText className="w-3 h-3" />
-                                    كشف حساب
+                                    <span>{loadingStatementId === c.id ? 'جاري التحميل...' : 'كشف حساب'}</span>
                                   </button>
                                 </td>
                               </tr>
-                          ))}
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
-
-                    {/* Customer Statement Details */}
-                    {selectedCustomerForStatement && customerStatementData && (
-                      <div className="mt-6 glass-card p-5 rounded-2xl space-y-4 border-t-4 border-t-indigo-500 animate-fade-in-slide">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                          <div className="space-y-1">
-                            <h3 className="text-base font-bold text-[var(--text-primary)]">📋 كشف حساب العميل: <span className="text-indigo-500">{customerStatementData.customer.name}</span></h3>
-                            <p className="text-xs text-[var(--text-secondary)]">كشف الحساب التفصيلي يوضح جميع الحركات المالية (له / عليه)</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={() => exportToExcelXML(
-                                customerStatementData.entries, `customer_statement_${customerStatementData.customer.name}`,
-                                ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
-                                (item: any) => [item.date, item.description, item.debit.toString(), item.credit.toString(), item.balance.toString()],
-                                `كشف حساب العميل: ${customerStatementData.customer.name}`, `الرصيد النهائي: ${customerStatementData.summary.finalBalance.toLocaleString()} SDG`
-                              )}
-                              className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
-                            ><Download className="w-3.5 h-3.5" /><span>تصدير Excel</span></button>
-                            <button 
-                              onClick={() => exportPDFGeneral(
-                                customerStatementData.entries, `كشف حساب العميل: ${customerStatementData.customerName}`,
-                                ['التاريخ', 'البيان', 'له (مدين)', 'عليه (دائن)', 'الرصيد'],
-                                (item: any) => [item.date, item.description, `${item.debit.toLocaleString()} SDG`, `${item.credit.toLocaleString()} SDG`, `${item.balance.toLocaleString()} SDG`],
-                                `customer_statement`
-                              )}
-                              className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
-                            ><Printer className="w-3.5 h-3.5" /><span>تصدير PDF</span></button>
-                            <button 
-                              onClick={() => { setSelectedCustomerForStatement(''); setCustomerStatementData(null); }}
-                              className="flex items-center gap-2 px-3 py-2 bg-[var(--border-color)] hover:bg-[var(--border-color)]/70 text-[var(--text-primary)] font-semibold rounded-xl text-xs transition-colors cursor-pointer"
-                            >✕ إغلاق</button>
-                          </div>
-                        </div>
-                        {statementLoading ? (
-                          <div className="text-center py-8 text-[var(--text-secondary)]">جاري تحميل كشف الحساب...</div>
-                        ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-right border-collapse text-xs">
-                              <thead>
-                                <tr className="border-b border-[var(--border-color)] text-[var(--text-secondary)]">
-                                  <th className="py-3 px-4 font-bold">التاريخ</th>
-                                  <th className="py-3 px-4 font-bold">البيان</th>
-                                  <th className="py-3 px-4 font-bold">له (مدين)</th>
-                                  <th className="py-3 px-4 font-bold">عليه (دائن)</th>
-                                  <th className="py-3 px-4 font-bold">الرصيد</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                                {(customerStatementData.entries || []).map((entry: any, idx: number) => (
-                                  <tr key={idx} className="hover:bg-[var(--border-color)]/20">
-                                    <td className="py-3 px-4 font-mono">{entry.date}</td>
-                                    <td className="py-3 px-4">{entry.description}</td>
-                                    <td className="py-3 px-4 font-mono text-rose-500">{entry.debit > 0 ? `${entry.debit.toLocaleString()} SDG` : '-'}</td>
-                                    <td className="py-3 px-4 font-mono text-emerald-500">{entry.credit > 0 ? `${entry.credit.toLocaleString()} SDG` : '-'}</td>
-                                    <td className="py-3 px-4 font-bold font-mono">{entry.balance.toLocaleString()} SDG</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                              <tfoot>
-                                <tr className="border-t-2 border-[var(--border-color)] font-bold bg-[var(--border-color)]/10">
-                                  <td className="py-3 px-4" colSpan={2}>الرصيد النهائي</td>
-                                  <td className="py-3 px-4 font-mono text-rose-500">{(customerStatementData.summary?.totalDebit || 0).toLocaleString()} SDG</td>
-                                  <td className="py-3 px-4 font-mono text-emerald-500">{(customerStatementData.summary?.totalCredit || 0).toLocaleString()} SDG</td>
-                                  <td className="py-3 px-4 font-mono text-lg">{(customerStatementData.summary?.finalBalance || 0).toLocaleString()} SDG</td>
-                                </tr>
-                              </tfoot>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const filteredCount = customerData.customers.filter((c: any) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.state.toLowerCase().includes(customerSearch.toLowerCase())).length;
+                      return renderPagination(custPage, custPageSize, filteredCount, setCustPage, setCustPageSize);
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2167,9 +2430,14 @@ export default function Reports() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                          {shippingData.orders
-                            .filter((o: any) => o.customerName.toLowerCase().includes(shippingSearch.toLowerCase()) || o.driverName.toLowerCase().includes(shippingSearch.toLowerCase()) || o.state.toLowerCase().includes(shippingSearch.toLowerCase()))
-                            .map((o: any, idx: number) => (
+                          {(() => {
+                            const filtered = shippingData.orders.filter((o: any) => 
+                              o.customerName.toLowerCase().includes(shippingSearch.toLowerCase()) || 
+                              o.driverName.toLowerCase().includes(shippingSearch.toLowerCase()) || 
+                              o.state.toLowerCase().includes(shippingSearch.toLowerCase())
+                            );
+                            const paginated = filtered.slice((shipPage - 1) * shipPageSize, shipPage * shipPageSize);
+                            return paginated.map((o: any, idx: number) => (
                               <tr key={idx} className="hover:bg-[var(--border-color)]/20">
                                 <td className="py-3 px-3 font-mono font-bold text-[var(--text-secondary)]">{o.id}</td>
                                 <td className="py-3 px-3 font-mono font-bold">{o.invoiceId}</td>
@@ -2189,10 +2457,19 @@ export default function Reports() {
                                 <td className="py-3 px-3 font-bold">{o.driverName}</td>
                                 <td className="py-3 px-3 font-mono text-[var(--text-secondary)]">{o.date}</td>
                               </tr>
-                          ))}
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
+                    {(() => {
+                      const filteredCount = shippingData.orders.filter((o: any) => 
+                        o.customerName.toLowerCase().includes(shippingSearch.toLowerCase()) || 
+                        o.driverName.toLowerCase().includes(shippingSearch.toLowerCase()) || 
+                        o.state.toLowerCase().includes(shippingSearch.toLowerCase())
+                      ).length;
+                      return renderPagination(shipPage, shipPageSize, filteredCount, setShipPage, setShipPageSize);
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2323,19 +2600,24 @@ export default function Reports() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                          {(profitsData.profitsByProduct || []).map((item: any, idx: number) => (
-                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
-                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
-                              <td className="py-3 px-4 font-bold">{item.productName}</td>
-                              <td className="py-3 px-4 font-mono">{item.qty.toLocaleString()} وحدة</td>
-                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
-                            </tr>
-                          ))}
+                          {(() => {
+                            const data = profitsData.profitsByProduct || [];
+                            const paginated = data.slice((profitProdPage - 1) * profitProdPageSize, profitProdPage * profitProdPageSize);
+                            return paginated.map((item: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                                <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{(profitProdPage - 1) * profitProdPageSize + idx + 1}</td>
+                                <td className="py-3 px-4 font-bold">{item.productName}</td>
+                                <td className="py-3 px-4 font-mono">{item.qty.toLocaleString()} وحدة</td>
+                                <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                              </tr>
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
+                    {renderPagination(profitProdPage, profitProdPageSize, (profitsData.profitsByProduct || []).length, setProfitProdPage, setProfitProdPageSize)}
                   </div>
                 )}
 
@@ -2382,20 +2664,25 @@ export default function Reports() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                          {(profitsData.profitsByInvoice || []).map((item: any, idx: number) => (
-                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
-                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
-                              <td className="py-3 px-4 font-mono font-bold text-indigo-500">{item.invoiceId}</td>
-                              <td className="py-3 px-4 font-mono">{item.date}</td>
-                              <td className="py-3 px-4 font-bold">{item.customerName}</td>
-                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
-                            </tr>
-                          ))}
+                          {(() => {
+                            const data = profitsData.profitsByInvoice || [];
+                            const paginated = data.slice((profitInvPage - 1) * profitInvPageSize, profitInvPage * profitInvPageSize);
+                            return paginated.map((item: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                                <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{(profitInvPage - 1) * profitInvPageSize + idx + 1}</td>
+                                <td className="py-3 px-4 font-mono font-bold text-indigo-500">{item.invoiceId}</td>
+                                <td className="py-3 px-4 font-mono">{item.date}</td>
+                                <td className="py-3 px-4 font-bold">{item.customerName}</td>
+                                <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                              </tr>
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
+                    {renderPagination(profitInvPage, profitInvPageSize, (profitsData.profitsByInvoice || []).length, setProfitInvPage, setProfitInvPageSize)}
                   </div>
                 )}
 
@@ -2440,18 +2727,23 @@ export default function Reports() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                          {(profitsData.profitsByCustomer || []).map((item: any, idx: number) => (
-                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
-                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
-                              <td className="py-3 px-4 font-bold">{item.customerName}</td>
-                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
-                            </tr>
-                          ))}
+                          {(() => {
+                            const data = profitsData.profitsByCustomer || [];
+                            const paginated = data.slice((profitCustPage - 1) * profitCustPageSize, profitCustPage * profitCustPageSize);
+                            return paginated.map((item: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                                <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{(profitCustPage - 1) * profitCustPageSize + idx + 1}</td>
+                                <td className="py-3 px-4 font-bold">{item.customerName}</td>
+                                <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                              </tr>
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
+                    {renderPagination(profitCustPage, profitCustPageSize, (profitsData.profitsByCustomer || []).length, setProfitCustPage, setProfitCustPageSize)}
                   </div>
                 )}
 
@@ -2497,19 +2789,24 @@ export default function Reports() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border-color)]/40 text-[var(--text-primary)]">
-                          {(profitsData.profitsByCategory || []).map((item: any, idx: number) => (
-                            <tr key={idx} className="hover:bg-[var(--border-color)]/20">
-                              <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{idx + 1}</td>
-                              <td className="py-3 px-4 font-bold"><span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500">{item.category}</span></td>
-                              <td className="py-3 px-4 font-mono">{item.qty.toLocaleString()} وحدة</td>
-                              <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
-                              <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
-                            </tr>
-                          ))}
+                          {(() => {
+                            const data = profitsData.profitsByCategory || [];
+                            const paginated = data.slice((profitCatPage - 1) * profitCatPageSize, profitCatPage * profitCatPageSize);
+                            return paginated.map((item: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-[var(--border-color)]/20">
+                                <td className="py-3 px-4 font-mono text-[var(--text-secondary)]">{(profitCatPage - 1) * profitCatPageSize + idx + 1}</td>
+                                <td className="py-3 px-4 font-bold"><span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500">{item.category}</span></td>
+                                <td className="py-3 px-4 font-mono">{item.qty.toLocaleString()} وحدة</td>
+                                <td className="py-3 px-4 font-mono">{item.revenue.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-mono text-rose-500">{item.cost.toLocaleString()} SDG</td>
+                                <td className="py-3 px-4 font-bold font-mono text-emerald-500">{item.profit.toLocaleString()} SDG</td>
+                              </tr>
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
+                    {renderPagination(profitCatPage, profitCatPageSize, (profitsData.profitsByCategory || []).length, setProfitCatPage, setProfitCatPageSize)}
                   </div>
                 )}
               </div>

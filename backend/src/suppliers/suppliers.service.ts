@@ -53,31 +53,55 @@ export class SuppliersService {
     const count = await this.prisma.purchaseOrder.count();
     const orderNumber = `PO-${String(count + 1).padStart(6, '0')}`;
 
-    return this.prisma.purchaseOrder.create({
-      data: {
-        orderNumber,
-        supplierId: data.supplierId,
-        total: data.total,
-        paid: data.paid ?? 0,
-        status: data.status as PurchaseStatus,
-        notes: data.notes,
-        items: {
-          create: data.items.map((item: any) => ({
-            productId: item.productId,
-            qty: item.qty,
-            unitCost: item.unitCost,
-            batchNumber: item.batchNumber,
-          })),
-        },
-      },
-      include: {
-        supplier: true,
-        items: {
-          include: {
-            product: true,
+    return this.prisma.$transaction(async (tx) => {
+      const po = await tx.purchaseOrder.create({
+        data: {
+          orderNumber,
+          supplierId: data.supplierId,
+          total: data.total,
+          paid: data.paid ?? 0,
+          status: data.status as PurchaseStatus,
+          notes: data.notes,
+          items: {
+            create: data.items.map((item: any) => ({
+              productId: item.productId,
+              qty: item.qty,
+              unitCost: item.unitCost,
+              batchNumber: item.batchNumber,
+            })),
           },
         },
-      },
+        include: {
+          supplier: true,
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+
+      if (po.paid > 0) {
+        const settings = await tx.companySettings.findFirst();
+        if (!settings || settings.linkPurchasesToFund) {
+          const txCount = await tx.fundTransaction.count();
+          const yearSuffix = new Date().getFullYear().toString().slice(-2);
+          const code = `SF${yearSuffix}${String(txCount + 1).padStart(6, '0')}`;
+          await tx.fundTransaction.create({
+            data: {
+              transactionCode: code,
+              amount: po.paid,
+              type: 'OUTFLOW',
+              source: 'PURCHASE',
+              paymentMethod: 'CASH',
+              description: `سداد مقدم فاتورة شراء: ${po.orderNumber} للمورد: ${po.supplier.name}`,
+              purchaseOrderId: po.id,
+            },
+          });
+        }
+      }
+
+      return po;
     });
   }
 
@@ -91,17 +115,40 @@ export class SuppliersService {
   }
 
   async createPayment(data: any) {
-    return this.prisma.supplierPayment.create({
-      data: {
-        supplierId: data.supplierId,
-        amount: data.amount,
-        paymentMethod: data.paymentMethod as PaymentMethod,
-        reference: data.reference,
-        notes: data.notes,
-      },
-      include: {
-        supplier: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.supplierPayment.create({
+        data: {
+          supplierId: data.supplierId,
+          amount: data.amount,
+          paymentMethod: data.paymentMethod as PaymentMethod,
+          reference: data.reference,
+          notes: data.notes,
+        },
+        include: {
+          supplier: true,
+        },
+      });
+
+      const settings = await tx.companySettings.findFirst();
+      if (!settings || settings.linkPurchasesToFund) {
+        const txCount = await tx.fundTransaction.count();
+        const yearSuffix = new Date().getFullYear().toString().slice(-2);
+        const code = `SF${yearSuffix}${String(txCount + 1).padStart(6, '0')}`;
+        await tx.fundTransaction.create({
+          data: {
+            transactionCode: code,
+            amount: payment.amount,
+            type: 'OUTFLOW',
+            source: 'SUPPLIER_PAYMENT',
+            paymentMethod: payment.paymentMethod,
+            reference: payment.reference,
+            description: `سداد دفعة للمورد: ${payment.supplier.name}${payment.notes ? ' - ' + payment.notes : ''}`,
+            supplierPaymentId: payment.id,
+          },
+        });
+      }
+
+      return payment;
     });
   }
 
