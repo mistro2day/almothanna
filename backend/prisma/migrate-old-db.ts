@@ -18,6 +18,7 @@ const mssqlConfig: sql.config = {
   password: process.env.MSSQL_PASSWORD || 'YourPasswordHere',
   server: process.env.MSSQL_HOST || 'localhost',
   database: process.env.MSSQL_DATABASE || 'MicroPOS',
+  requestTimeout: 300000,
   options: {
     encrypt: false,
     trustServerCertificate: true,
@@ -69,6 +70,8 @@ async function migrate() {
     // 0. Clean Existing Test Data in PostgreSQL
     // ==========================================
     console.log('🧹 Clearing existing test/sample data in PostgreSQL...');
+    await prisma.expense.deleteMany();
+    await prisma.expenseCategory.deleteMany();
     await prisma.activity.deleteMany();
     await prisma.notification.deleteMany();
     await prisma.saleItem.deleteMany();
@@ -533,6 +536,50 @@ async function migrate() {
       const chunk = stockMovementsToInsert.slice(i, i + 1000);
       await prisma.stockMovement.createMany({ data: chunk });
     }
+
+    // ==========================================
+    // 8. Migrate Expenses (tbl_expenditure_mst)
+    // ==========================================
+    console.log('🔄 Migrating Expenses from tbl_expenditure_mst...');
+    const expensesResult = await pool.request().query(
+      "SELECT * FROM tbl_expenditure_mst WHERE (deleted = 0 OR deleted IS NULL)"
+    );
+    const oldExpenses = expensesResult.recordset;
+    console.log(`ℹ️ Found ${oldExpenses.length} expenses in old database.`);
+
+    // Find or create a default user for linking
+    const defaultUser = await prisma.user.findFirst();
+    const categoryCache = new Map<string, string>();
+    let expensesCount = 0;
+
+    for (const exp of oldExpenses) {
+      const categoryName = (exp.expendituretxt || 'مصاريف عامة').trim();
+      let categoryId = categoryCache.get(categoryName);
+      
+      if (!categoryId) {
+        const cat = await prisma.expenseCategory.upsert({
+          where: { name: categoryName },
+          update: {},
+          create: { name: categoryName },
+        });
+        categoryId = cat.id;
+        categoryCache.set(categoryName, categoryId);
+      }
+
+      await prisma.expense.create({
+        data: {
+          amount: parseFloat(exp.paid_amount || '0'),
+          description: exp.extranote || null,
+          date: exp.expenditure_date ? new Date(exp.expenditure_date) : new Date(),
+          categoryId,
+          userId: defaultUser?.id || null,
+          createdAt: exp.cDate ? new Date(exp.cDate) : new Date(),
+          updatedAt: exp.eDate ? new Date(exp.eDate) : new Date(),
+        },
+      });
+      expensesCount++;
+    }
+    console.log(`✅ Expenses migration completed. Migrated ${expensesCount} expenses.`);
 
     console.log('🎉 Database migration finished successfully!');
   } catch (error) {
